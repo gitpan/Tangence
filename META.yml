@@ -1,0 +1,50 @@
+---
+abstract: 'attribute-oriented server/client object remoting framework'
+author:
+  - 'Paul Evans <leonerd@leonerd.org.uk>'
+build_requires:
+  Test::Exception: 0
+  Test::HexString: 0
+  Test::More: 0
+  Test::Refcount: 0
+configure_requires:
+  Module::Build: 0.36
+generated_by: 'Module::Build version 0.3603'
+license: perl
+meta-spec:
+  url: http://module-build.sourceforge.net/META-spec-v1.4.html
+  version: 1.4
+name: Tangence
+provides:
+  Tangence:
+    file: lib/Tangence.pm
+    version: 0.01
+  Tangence::Connection:
+    file: lib/Tangence/Connection.pm
+  Tangence::Constants:
+    file: lib/Tangence/Constants.pm
+  Tangence::Message:
+    file: lib/Tangence/Message.pm
+  Tangence::Metacode:
+    file: lib/Tangence/Metacode.pm
+  Tangence::Object:
+    file: lib/Tangence/Object.pm
+  Tangence::ObjectProxy:
+    file: lib/Tangence/ObjectProxy.pm
+  Tangence::Registry:
+    file: lib/Tangence/Registry.pm
+  Tangence::Server:
+    file: lib/Tangence/Server.pm
+  Tangence::Server::Connection:
+    file: lib/Tangence/Server/Connection.pm
+  Tangence::Server::Context:
+    file: lib/Tangence/Server/Context.pm
+  Tangence::Stream:
+    file: lib/Tangence/Stream.pm
+requires:
+  IO::Async: 0.17
+  IO::Async::Test: 0.14
+  URI::Split: 0
+resources:
+  license: http://dev.perl.org/licenses/
+version: 0.01
