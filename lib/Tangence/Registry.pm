@@ -6,7 +6,10 @@
 package Tangence::Registry;
 
 use strict;
+use warnings;
 use base qw( Tangence::Object );
+
+our $VERSION = '0.02';
 
 use Carp;
 
@@ -14,27 +17,31 @@ use Tangence::Constants;
 
 use Scalar::Util qw( weaken );
 
-our %METHODS = (
-   get_by_id => {
-      args => [qw( int )],
-      ret  => 'obj',
-   },
-);
+Tangence::Meta::Class->renew(
+   __PACKAGE__,
 
-our %EVENTS = (
-   object_constructed => {
-      args => [qw( int )],
+   methods => {
+      get_by_id => {
+         args => [qw( int )],
+         ret  => 'obj',
+      },
    },
-   object_destroyed => {
-      args => [qw( int )],
-   },
-);
 
-our %PROPS = (
-   objects => {
-      dim  => DIM_HASH,
-      type => 'str',
-   }
+   events => {
+      object_constructed => {
+         args => [qw( int )],
+      },
+      object_destroyed => {
+         args => [qw( int )],
+      },
+   },
+
+   props => {
+      objects => {
+         dim  => DIM_HASH,
+         type => 'str',
+      }
+   },
 );
 
 sub new
@@ -46,6 +53,7 @@ sub new
    my $self = $class->SUPER::new(
       id => $id,
       registry => "BOOTSTRAP",
+      meta => Tangence::Meta::Class->new( $class ),
    );
    weaken( $self->{registry} = $self );
    
@@ -111,6 +119,14 @@ sub destroy_object
    $self->fire_event( "object_destroyed", $id );
 
    push @{ $self->{freeids} }, $id; # Recycle the ID
+}
+
+sub get_meta_class
+{
+   my $self = shift;
+   my ( $class ) = @_;
+
+   return Tangence::Meta::Class->new( $class );
 }
 
 # Keep perl happy; keep Britain tidy

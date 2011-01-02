@@ -9,7 +9,7 @@ build_requires:
   Test::Refcount: 0
 configure_requires:
   Module::Build: 0.36
-generated_by: 'Module::Build version 0.3603'
+generated_by: 'Module::Build version 0.3607'
 license: perl
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.4.html
@@ -18,33 +18,47 @@ name: Tangence
 provides:
   Tangence:
     file: lib/Tangence.pm
-    version: 0.01
+    version: 0.02
   Tangence::Connection:
     file: lib/Tangence/Connection.pm
+    version: 0.02
   Tangence::Constants:
     file: lib/Tangence/Constants.pm
+    version: 0.02
   Tangence::Message:
     file: lib/Tangence/Message.pm
+    version: 0.02
+  Tangence::Meta::Class:
+    file: lib/Tangence/Meta/Class.pm
+    version: 0.02
   Tangence::Metacode:
     file: lib/Tangence/Metacode.pm
+    version: 0.02
   Tangence::Object:
     file: lib/Tangence/Object.pm
+    version: 0.02
   Tangence::ObjectProxy:
     file: lib/Tangence/ObjectProxy.pm
+    version: 0.02
   Tangence::Registry:
     file: lib/Tangence/Registry.pm
+    version: 0.02
   Tangence::Server:
     file: lib/Tangence/Server.pm
+    version: 0.02
   Tangence::Server::Connection:
     file: lib/Tangence/Server/Connection.pm
+    version: 0.02
   Tangence::Server::Context:
     file: lib/Tangence/Server/Context.pm
+    version: 0.02
   Tangence::Stream:
     file: lib/Tangence/Stream.pm
+    version: 0.02
 requires:
   IO::Async: 0.17
   IO::Async::Test: 0.14
   URI::Split: 0
 resources:
   license: http://dev.perl.org/licenses/
-version: 0.01
+version: 0.02

@@ -6,12 +6,15 @@
 package Tangence::Server::Connection;
 
 use strict;
+use warnings;
 
 use base qw( Tangence::Stream );
-use Tangence::Constants;
+
+our $VERSION = '0.02';
 
 use Carp;
 
+use Tangence::Constants;
 use Tangence::Server::Context;
 
 sub new

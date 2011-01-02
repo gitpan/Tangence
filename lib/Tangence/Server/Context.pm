@@ -6,6 +6,9 @@
 package Tangence::Server::Context;
 
 use strict;
+use warnings;
+
+our $VERSION = '0.02';
 
 use Carp;
 

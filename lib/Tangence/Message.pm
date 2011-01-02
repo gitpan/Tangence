@@ -6,10 +6,13 @@
 package Tangence::Message;
 
 use strict;
+use warnings;
 
-use Tangence::Constants;
+our $VERSION = '0.02';
 
 use Carp;
+
+use Tangence::Constants;
 
 use Encode qw( encode_utf8 decode_utf8 );
 
