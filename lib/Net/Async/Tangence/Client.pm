@@ -1,16 +1,16 @@
 #  You may distribute under the terms of either the GNU General Public License
 #  or the Artistic License (the same terms as Perl itself)
 #
-#  (C) Paul Evans, 2010 -- leonerd@leonerd.org.uk
+#  (C) Paul Evans, 2010-2011 -- leonerd@leonerd.org.uk
 
-package Tangence::Connection;
+package Net::Async::Tangence::Client;
 
 use strict;
 use warnings;
 
-use base qw( Tangence::Stream );
+use base qw( Net::Async::Tangence::Protocol );
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 
 use Carp;
 
@@ -24,34 +24,52 @@ sub new
    my $class = shift;
    my %args = @_;
 
-   my $identity = delete $args{identity};
-
-   my $on_error = delete $args{on_error} || "croak";
-   if( ref $on_error eq "CODE" ) {
-      # OK
-   }
-   elsif( $on_error eq "croak" ) {
-      $on_error = sub { croak "Received MSG_ERROR: $_[0]" };
-   }
-   elsif( $on_error eq "carp" ) {
-      $on_error = sub { carp "Received MSG_ERROR: $_[0]" };
-   }
-   else {
-      croak "Expected 'on_error' to be CODE reference or strings 'croak' or 'carp'";
-   }
-
    my $self = $class->SUPER::new( %args );
+
+   # It's possible a handle was passed in the constructor.
+   $self->_do_initial( %args ) if defined $self->transport;
+
+   return $self;
+}
+
+sub _init
+{
+   my $self = shift;
+   my ( $params ) = @_;
+
+   $self->{identity} = delete $params->{identity};
 
    $self->{objectproxies} = {};
    $self->{schemata}      = {};
 
-   $self->{identity} = $identity;
-   $self->{on_error} = $on_error;
+   $self->SUPER::_init( $params );
 
-   # It's possible a handle was passed in the constructor.
-   $self->_do_initial( %args ) if defined $self->read_handle;
+   $params->{on_error} ||= "croak";
+}
 
-   return $self;
+sub configure
+{
+   my $self = shift;
+   my %params = @_;
+
+   if( my $on_error = delete $params{on_error} ) {
+      if( ref $on_error eq "CODE" ) {
+         # OK
+      }
+      elsif( $on_error eq "croak" ) {
+         $on_error = sub { croak "Received MSG_ERROR: $_[0]" };
+      }
+      elsif( $on_error eq "carp" ) {
+         $on_error = sub { carp "Received MSG_ERROR: $_[0]" };
+      }
+      else {
+         croak "Expected 'on_error' to be CODE reference or strings 'croak' or 'carp'";
+      }
+
+      $self->{on_error} = $on_error;
+   }
+
+   $self->SUPER::configure( %params );
 }
 
 sub connect
@@ -114,9 +132,11 @@ sub connect_exec
       },
    );
 
-   $self->set_handles(
-      read_handle  => $myread,
-      write_handle => $mywrite,
+   $self->configure(
+      transport => IO::Async::Stream->new(
+         read_handle  => $myread,
+         write_handle => $mywrite,
+      )
    );
 
    $args{on_connected}->( $self ) if $args{on_connected};
@@ -138,19 +158,12 @@ sub connect_tcp
 
    my ( $host, $port ) = $authority =~ m/^(.*):(.*)$/;
 
-   my $loop = $self->get_loop;
-
-   require Socket;
-
-   $loop->connect(
-      socktype => Socket::SOCK_STREAM(),
+   $self->connect(
       host     => $host,
       service  => $port,
 
       on_connected => sub {
-         my ( $sock ) = @_;
-
-         $self->set_handle( $sock );
+         my ( $self ) = @_;
 
          $args{on_connected}->( $self ) if $args{on_connected};
          $self->_do_initial( %args );
@@ -166,17 +179,13 @@ sub connect_unix
    my $self = shift;
    my ( $path, %args ) = @_;
 
-   my $loop = $self->get_loop;
-
    require Socket;
 
-   $loop->connect(
+   $self->connect(
       addr => [ Socket::AF_UNIX(), Socket::SOCK_STREAM(), 0, Socket::pack_sockaddr_un( $path ) ],
 
       on_connected => sub {
-         my ( $sock ) = @_;
-
-         $self->set_handle( $sock );
+         my ( $self ) = @_;
 
          $args{on_connected}->( $self ) if $args{on_connected};
          $self->_do_initial( %args );

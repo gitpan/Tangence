@@ -1,37 +1,50 @@
 #  You may distribute under the terms of either the GNU General Public License
 #  or the Artistic License (the same terms as Perl itself)
 #
-#  (C) Paul Evans, 2010 -- leonerd@leonerd.org.uk
+#  (C) Paul Evans, 2010-2011 -- leonerd@leonerd.org.uk
 
-package Tangence::Server::Connection;
+package Net::Async::Tangence::ServerProtocol;
 
 use strict;
 use warnings;
 
-use base qw( Tangence::Stream );
+use base qw( Net::Async::Tangence::Protocol );
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 
 use Carp;
 
 use Tangence::Constants;
-use Tangence::Server::Context;
 
-sub new
+use Net::Async::Tangence::ServerContext;
+
+sub _init
 {
-   my $class = shift;
-   my %args = @_;
+   my $self = shift;
+   my ( $params ) = @_;
 
-   my $registry = delete $args{registry};
+   $self->{registry} = delete $params->{registry};
 
-   my $self = $class->SUPER::new(
-      %args,
-      on_closed => sub { my $self = shift; $self->shutdown },
-   );
+   $params->{on_closed} ||= undef;
+}
 
-   $self->{registry} = $registry;
+sub configure
+{
+   my $self = shift;
+   my %params = @_;
 
-   return $self;
+   if( exists $params{on_closed} ) {
+      my $on_closed = $params{on_closed};
+      $params{on_closed} = sub {
+         my $self = shift;
+
+         $on_closed->( $self ) if $on_closed;
+
+         $self->shutdown;
+      };
+   }
+
+   $self->SUPER::configure( %params );
 }
 
 sub shutdown
@@ -79,7 +92,7 @@ sub handle_request_CALL
    
    my $objid = $message->unpack_int();
 
-   my $ctx = Tangence::Server::Context->new( $self, $token );
+   my $ctx = Net::Async::Tangence::ServerContext->new( $self, $token );
 
    my $registry = $self->{registry};
 
@@ -100,7 +113,7 @@ sub handle_request_SUBSCRIBE
    my $objid = $message->unpack_int();
    my $event = $message->unpack_str();
 
-   my $ctx = Tangence::Server::Context->new( $self, $token );
+   my $ctx = Net::Async::Tangence::ServerContext->new( $self, $token );
 
    my $registry = $self->{registry};
 
@@ -108,13 +121,16 @@ sub handle_request_SUBSCRIBE
       return $ctx->responderr( "No such object with id $objid" );
 
    my $id = $object->subscribe_event( $event,
-      sub {
+      $self->_capture_weakself( sub {
+         my $self = shift or return;
+         my $object = shift;
+
          my $message = $object->generate_message_EVENT( $self, $event, @_ );
          $self->request(
             request     => $message,
             on_response => sub { "IGNORE" },
          );
-      }
+      } )
    );
 
    push @{ $self->{subscriptions} }, [ $object, $event, $id ];
@@ -130,7 +146,7 @@ sub handle_request_UNSUBSCRIBE
    my $objid = $message->unpack_int();
    my $event = $message->unpack_str();
 
-   my $ctx = Tangence::Server::Context->new( $self, $token );
+   my $ctx = Net::Async::Tangence::ServerContext->new( $self, $token );
 
    my $registry = $self->{registry};
 
@@ -159,7 +175,7 @@ sub handle_request_GETPROP
    
    my $objid = $message->unpack_int();
 
-   my $ctx = Tangence::Server::Context->new( $self, $token );
+   my $ctx = Net::Async::Tangence::ServerContext->new( $self, $token );
 
    my $registry = $self->{registry};
 
@@ -179,7 +195,7 @@ sub handle_request_SETPROP
    
    my $objid = $message->unpack_int();
 
-   my $ctx = Tangence::Server::Context->new( $self, $token );
+   my $ctx = Net::Async::Tangence::ServerContext->new( $self, $token );
 
    my $registry = $self->{registry};
 
@@ -201,7 +217,7 @@ sub handle_request_WATCH
    my $prop  = $message->unpack_str();
    my $want_initial = $message->unpack_bool();
 
-   my $ctx = Tangence::Server::Context->new( $self, $token );
+   my $ctx = Net::Async::Tangence::ServerContext->new( $self, $token );
 
    my $registry = $self->{registry};
 
@@ -240,7 +256,7 @@ sub handle_request_UNWATCH
    my $objid = $message->unpack_int();
    my $prop  = $message->unpack_str();
 
-   my $ctx = Tangence::Server::Context->new( $self, $token );
+   my $ctx = Net::Async::Tangence::ServerContext->new( $self, $token );
 
    my $registry = $self->{registry};
 
@@ -269,7 +285,7 @@ sub handle_request_GETROOT
    
    my $identity = $message->unpack_any();
 
-   my $ctx = Tangence::Server::Context->new( $self, $token );
+   my $ctx = Net::Async::Tangence::ServerContext->new( $self, $token );
 
    my $registry = $self->{registry};
    my $root = $registry->get_by_id( 1 );
@@ -286,7 +302,7 @@ sub handle_request_GETREGISTRY
    my $self = shift;
    my ( $token ) = @_;
 
-   my $ctx = Tangence::Server::Context->new( $self, $token );
+   my $ctx = Net::Async::Tangence::ServerContext->new( $self, $token );
 
    my $registry = $self->{registry};
 
@@ -316,13 +332,16 @@ sub _install_watch
    my %callbacks;
    foreach my $name ( @{ CHANGETYPES->{$dim} } ) {
       my $how = $change_values{$name};
-      $callbacks{$name} = sub {
+      $callbacks{$name} = $self->_capture_weakself( sub {
+         my $self = shift or return;
+         my $object = shift;
+
          my $message = $object->generate_message_UPDATE( $self, $prop, $how, @_ );
          $self->request(
             request     => $message,
             on_response => sub { "IGNORE" },
          );
-      }
+      } );
    }
 
    my $id = $object->watch_property( $prop, %callbacks );

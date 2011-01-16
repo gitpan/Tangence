@@ -2,16 +2,20 @@
 
 use strict;
 
-use Test::More tests => 32;
+use Test::More tests => 37;
 use Test::HexString;
+use Test::Identity;
+use Test::Memory::Cycle;
 use Test::Refcount;
 
 use IO::Async::Test;
 use IO::Async::Loop;
+use IO::Async::Stream;
 
 use Tangence::Constants;
 use Tangence::Registry;
-use Tangence::Server;
+
+use Net::Async::Tangence::Server;
 $Tangence::Message::SORT_HASH_KEYS = 1;
 
 use t::Ball;
@@ -29,12 +33,15 @@ my $bag = $registry->construct(
 
 is_oneref( $bag, '$bag has refcount 1 initially' );
 
-my $server = Tangence::Server->new(
-   loop     => $loop,
+my $server = Net::Async::Tangence::Server->new(
    registry => $registry,
 );
 
 is_oneref( $server, '$server has refcount 1 initially' );
+
+$loop->add( $server );
+
+is_refcount( $server, 2, '$server has refcount 2 after $loop->add' );
 
 my ( $S1, $S2 ) = $loop->socketpair() or die "Cannot create socket pair - $!";
 
@@ -50,9 +57,9 @@ my ( $S1, $S2 ) = $loop->socketpair() or die "Cannot create socket pair - $!";
    }
 }
 
-my $conn = $server->new_conn( handle => $S1 );
+my $conn = $server->on_stream( IO::Async::Stream->new( handle => $S1 ) );
 
-is_oneref( $server, '$server has refcount 1 after new BE' );
+is_refcount( $server, 2, '$server has refcount 2 after new BE' );
 # Three refs: one in Server, one in IO::Async::Loop, one here
 is_refcount( $conn, 3, '$conn has refcount 3 initially' );
 
@@ -121,12 +128,13 @@ $S2->syswrite( "\1" . "\0\0\0\x10" .
 
 # This long string is massive and annoying. Sorry.
 
-$expect = "\x82" . "\0\0\0\xd2" .
+$expect = "\x82" . "\0\0\0\xe0" .
           "\xe2" . "t::Ball\0" .
                    "\x64" . "events\0"     . "\x62" . "bounced\0" . "\x61" . "args\0" . "\x41" . "\x23" . "str" .
                                                       "destroy\0" . "\x61" . "args\0" . "\x40" .
-                            "isa\0"        . "\x42" . "\x27" . "t::Ball" .
+                            "isa\0"        . "\x43" . "\x27" . "t::Ball" .
                                                       "\x30" . "Tangence::Object" .
+                                                      "\x2d" . "t::Colourable" .
                             "methods\0"    . "\x61" . "bounce\0" . "\x62" . "args\0" . "\x41" . "\x23" . "str" .
                                                                             "ret\0" . "\x23" . "str" .
                             "properties\0" . "\x62" . "colour\0" . "\x62" . "dim\0" . "\x21" . "1" .
@@ -146,8 +154,10 @@ is_deeply( $bag->get_prop_colours,
 
 my $ball = $registry->get_by_id( 2 );
 
+my $cb_self;
 my $howhigh;
-$ball->subscribe_event( bounced => sub { $howhigh = shift } );
+
+$ball->subscribe_event( bounced => sub { ( $cb_self, $howhigh ) = @_; } );
 
 # MSG_CALL
 $S2->syswrite( "\1" . "\0\0\0\x13" .
@@ -159,11 +169,14 @@ wait_for { defined $howhigh };
 
 ok( defined $t::Ball::last_bounce_ctx, 'defined $last_bounce_ctx' );
 
-isa_ok( $t::Ball::last_bounce_ctx, "Tangence::Server::Context", '$last_bounce_ctx isa Tangence::Server::Context' );
+isa_ok( $t::Ball::last_bounce_ctx, "Net::Async::Tangence::ServerContext", '$last_bounce_ctx isa Net::Async::Tangence::ServerContext' );
 
 is( $t::Ball::last_bounce_ctx->connection, $conn, '$last_bounce_ctx->connection' );
 
+identical( $cb_self, $ball, '$cb_self is $ball' );
 is( $howhigh, "20 metres", '$howhigh is 20 metres after CALL' );
+
+undef $cb_self;
 
 $expect = "\x82" . "\0\0\0\x09" .
           "\x28" . "bouncing";
@@ -295,8 +308,20 @@ wait_for { $obj_destroyed };
 is( $obj_destroyed, 1, 'object gets destroyed' );
 
 is_oneref( $bag, '$bag has refcount 1 before shutdown' );
+
+is_refcount( $server, 2, '$server has refcount 2 before $loop->remove' );
+
+$loop->remove( $server );
+
 is_oneref( $server, '$server has refcount 1 before shutdown' );
 
+memory_cycle_ok( $bag, '$bag has no memory cycles' );
+memory_cycle_ok( $registry, '$registry has no memory cycles' );
+# Can't easily do $server yet because Devel::Cycle will throw
+#   Unhandled type: GLOB at /usr/share/perl5/Devel/Cycle.pm line 107.
+# on account of filehandles
+
+$conn->close;
 undef $server;
 
 is_oneref( $conn, '$conn has refcount 1 after shutdown' );

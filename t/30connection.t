@@ -2,15 +2,17 @@
 
 use strict;
 
-use Test::More tests => 37;
+use Test::More tests => 39;
 use Test::Exception;
 use Test::HexString;
+use Test::Memory::Cycle;
 use IO::Async::Test;
 use IO::Async::Loop;
 
 use Tangence::Constants;
 use Tangence::Registry;
-use Tangence::Connection;
+
+use Net::Async::Tangence::Client;
 $Tangence::Message::SORT_HASH_KEYS = 1;
 
 my $loop = IO::Async::Loop->new();
@@ -30,7 +32,7 @@ my ( $S1, $S2 ) = $loop->socketpair() or die "Cannot create socket pair - $!";
    }
 }
 
-my $conn = Tangence::Connection->new(
+my $conn = Net::Async::Tangence::Client->new(
    handle => $S1,
    on_error => sub { die "Test died early - $_[0]" },
    identity => "testscript",
@@ -110,12 +112,13 @@ is_hexstr( wait_for_message, $expect, 'client stream contains MSG_CALL' );
 
 # This long string is massive and annoying. Sorry.
 
-$S2->syswrite( "\x82" . "\0\0\0\xd2" .
+$S2->syswrite( "\x82" . "\0\0\0\xe0" .
                "\xe2" . "t::Ball\0" .
                         "\x64" . "events\0"     . "\x62" . "bounced\0" . "\x61" . "args\0" . "\x41" . "\x23" . "str" .
                                                            "destroy\0" . "\x61" . "args\0" . "\x40" .
-                                 "isa\0"        . "\x42" . "\x27" . "t::Ball" .
+                                 "isa\0"        . "\x43" . "\x27" . "t::Ball" .
                                                            "\x30" . "Tangence::Object" .
+                                                           "\x2d" . "t::Colourable" .
                                  "methods\0"    . "\x61" . "bounce\0" . "\x62" . "args\0" . "\x41" . "\x23" . "str" .
                                                                                  "ret\0" . "\x23" . "str" .
                                  "properties\0" . "\x62" . "colour\0" . "\x62" . "dim\0" . "\x21" . "1" .
@@ -439,3 +442,11 @@ is( $proxy_destroyed, 1, 'proxy gets destroyed' );
 $expect = "\x80" . "\0\0\0\0";
 
 is_hexstr( wait_for_message, $expect, 'client stream contains MSG_OK after MSG_DESTROY' );
+
+memory_cycle_ok( $ballproxy, '$ballproxy has no memory cycles' );
+
+# Deconfigure the connection otherwise Devel::Cycle will throw
+#   Unhandled type: GLOB at /usr/share/perl5/Devel/Cycle.pm line 107.
+# on account of filehandles
+$conn->configure( transport => undef );
+memory_cycle_ok( $conn, '$conn has no memory cycles' );

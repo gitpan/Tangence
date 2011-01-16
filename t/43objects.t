@@ -2,14 +2,17 @@
 
 use strict;
 
-use Test::More tests => 7;
+use Test::More tests => 12;
+use Test::Memory::Cycle;
 use IO::Async::Test;
 use IO::Async::Loop;
+use IO::Async::Stream;
 
 use Tangence::Constants;
 use Tangence::Registry;
-use Tangence::Server;
-use Tangence::Connection;
+
+use Net::Async::Tangence::Server;
+use Net::Async::Tangence::Client;
 
 use t::Ball;
 use t::Bag;
@@ -26,16 +29,17 @@ my $bag = $registry->construct(
 my $ball = $bag->get_ball( "red" );
 my $ballid = $ball->id;
 
-my $server = Tangence::Server->new(
-   loop     => $loop,
+my $server = Net::Async::Tangence::Server->new(
    registry => $registry,
 );
 
+$loop->add( $server );
+
 my ( $S1, $S2 ) = $loop->socketpair() or die "Cannot create socket pair - $!";
 
-$server->new_conn( handle => $S1 );
+$server->on_stream( IO::Async::Stream->new( handle => $S1 ) );
 
-my $conn = Tangence::Connection->new( handle => $S2 );
+my $conn = Net::Async::Tangence::Client->new( handle => $S2 );
 $loop->add( $conn );
 
 wait_for { defined $conn->get_root };
@@ -85,7 +89,7 @@ $ballproxy->subscribe_event(
    on_fire => sub { $ballproxy_destroyed = 1 } );
 
 my @destroyed;
-$registry->subscribe_event( object_destroyed => sub { push @destroyed, $_[0] } );
+$registry->subscribe_event( object_destroyed => sub { push @destroyed, $_[1] } );
 
 $ball->destroy;
 
@@ -133,3 +137,9 @@ undef $colour;
 wait_for { defined $colour };
 
 is( $colour, "yellow", '$colour is yellow from second object' );
+
+memory_cycle_ok( $registry, '$registry has no memory cycles' );
+memory_cycle_ok( $bag, '$bag has no memory cycles' );
+memory_cycle_ok( $bagproxy, '$bagproxy has no memory cycles' );
+memory_cycle_ok( $ball, '$ball has no memory cycles' );
+memory_cycle_ok( $ballproxy, '$ballproxy has no memory cycles' );

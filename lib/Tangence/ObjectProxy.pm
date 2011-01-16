@@ -1,18 +1,20 @@
 #  You may distribute under the terms of either the GNU General Public License
 #  or the Artistic License (the same terms as Perl itself)
 #
-#  (C) Paul Evans, 2010 -- leonerd@leonerd.org.uk
+#  (C) Paul Evans, 2010-2011 -- leonerd@leonerd.org.uk
 
 package Tangence::ObjectProxy;
 
 use strict;
 use warnings;
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 
 use Carp;
 
 use Tangence::Constants;
+
+use Scalar::Util qw( weaken );
 
 sub new
 {
@@ -28,6 +30,9 @@ sub new
 
       on_error => $args{on_error},
    }, $class;
+
+   # An ObjectProxy is useless after its connection disappears
+   weaken( $self->{conn} );
 
    return $self;
 }

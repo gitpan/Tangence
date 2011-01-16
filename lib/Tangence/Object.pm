@@ -8,7 +8,7 @@ package Tangence::Object;
 use strict;
 use warnings;
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 
 use Carp;
 
@@ -85,12 +85,6 @@ sub _new_property
    }
 
    $self->{properties}->{$prop} = [ $initial, [] ];
-}
-
-sub DESTROY
-{
-   my $self = shift;
-   $self->destroy if defined $self->{registry};
 }
 
 sub destroy
@@ -216,7 +210,7 @@ sub fire_event
    $self->can_event( $event ) or croak "$self has no event $event";
 
    foreach my $cb ( @{ $self->{event_subs}->{$event} } ) {
-      $cb->( @args );
+      $cb->( $self, @args );
    }
 }
 
@@ -277,7 +271,7 @@ sub watch_property
 
    push @$watchlist, $callbacks;
 
-   $on_updated->( $self->{properties}->{$prop}->[0] ) if $on_updated;
+   $on_updated->( $self, $self->{properties}->{$prop}->[0] ) if $on_updated;
 
    my $ref = \@{$watchlist}[$#$watchlist];  # reference to last element
    return $ref + 0; # force numeric context

@@ -2,14 +2,18 @@
 
 use strict;
 
-use Test::More tests => 16;
+use Test::More tests => 19;
+use Test::Memory::Cycle;
 use IO::Async::Test;
 use IO::Async::Loop;
+use IO::Async::Stream;
 
 use Tangence::Constants;
 use Tangence::Registry;
-use Tangence::Server;
-use Tangence::Connection;
+
+use Net::Async::Tangence::Server;
+use Net::Async::Tangence::Client;
+
 use t::TestObj;
 
 my $loop = IO::Async::Loop->new();
@@ -20,16 +24,17 @@ my $obj = $registry->construct(
    "t::TestObj",
 );
 
-my $server = Tangence::Server->new(
-   loop     => $loop,
+my $server = Net::Async::Tangence::Server->new(
    registry => $registry,
 );
 
+$loop->add( $server );
+
 my ( $S1, $S2 ) = $loop->socketpair() or die "Cannot create socket pair - $!";
 
-$server->new_conn( handle => $S1 );
+$server->on_stream( IO::Async::Stream->new( handle => $S1 ) );
 
-my $conn = Tangence::Connection->new( handle => $S2 );
+my $conn = Net::Async::Tangence::Client->new( handle => $S2 );
 $loop->add( $conn );
 
 wait_for { defined $conn->get_root };
@@ -188,3 +193,7 @@ wait_for { defined $m_index };
 
 is( $m_index, 1, 'move array index' );
 is( $m_delta, 3, 'move array delta' );
+
+memory_cycle_ok( $registry, '$registry has no memory cycles' );
+memory_cycle_ok( $obj, '$obj has no memory cycles' );
+memory_cycle_ok( $proxy, '$proxy has no memory cycles' );

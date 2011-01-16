@@ -2,7 +2,9 @@
 
 use strict;
 
-use Test::More tests => 31;
+use Test::More tests => 34;
+use Test::Identity;
+use Test::Memory::Cycle;
 use Test::Refcount;
 
 use Tangence::Constants;
@@ -76,7 +78,7 @@ is_deeply( $ball->can_property(),
 
 is_deeply( $ball->introspect,
            {
-              isa => [qw( t::Ball Tangence::Object )],
+              isa => [qw( t::Ball Tangence::Object t::Colourable )],
               methods => {
                  bounce => { args => [qw( str )], ret => 'str' },
               },
@@ -96,12 +98,13 @@ is_deeply( $ball->smashkeys,
            '$ball->smashkeys' );
 
 my $bounces = 0;
+my $cb_self;
 my $howhigh;
 
 my $id;
 
 $id = $ball->subscribe_event( bounced => sub {
-      ( $howhigh ) = @_;
+      ( $cb_self, $howhigh ) = @_;
       $bounces++;
 } );
 
@@ -110,7 +113,10 @@ is_oneref( $ball, '$ball has refcount 1 after subscribe_event' );
 $ball->method_bounce( {}, "20 metres" );
 
 is( $bounces, 1, '$bounces is 1 after ->bounce' );
+identical( $cb_self, $ball, '$cb_self is $ball' );
 is( $howhigh, "20 metres", '$howhigh is 20 metres' );
+
+undef $cb_self;
 
 $ball->unsubscribe_event( bounced => $id );
 
@@ -124,7 +130,7 @@ is( $ball->get_prop_colour, "red", 'colour is initially red' );
 
 my $colour;
 $id = $ball->watch_property( colour => 
-   on_set => sub { $colour = shift },
+   on_set => sub { ( $cb_self, $colour ) = @_ },
 );
 
 is_oneref( $ball, '$ball has refcount 1 after watch_property' );
@@ -132,7 +138,10 @@ is_oneref( $ball, '$ball has refcount 1 after watch_property' );
 $ball->set_prop_colour( "blue" );
 
 is( $ball->get_prop_colour, "blue", 'colour is now blue' );
+identical( $cb_self, $ball, '$cb_self is $ball' );
 is( $colour, "blue", '$colour is blue' );
+
+undef $cb_self;
 
 $ball->unwatch_property( colour => $id );
 
@@ -145,6 +154,9 @@ is( $colour, "blue", '$colour is still blue' );
 
 is_oneref( $ball, '$ball has refcount 1 just before unref' );
 
+memory_cycle_ok( $ball, '$ball has no memory cycles' );
+
+$ball->destroy;
 undef $ball;
 
 is( $fakereg_got_destroy, 1, 'registry acknowledges object destruction' );

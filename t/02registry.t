@@ -2,7 +2,9 @@
 
 use strict;
 
-use Test::More tests => 14;
+use Test::More tests => 17;
+use Test::Identity;
+use Test::Memory::Cycle;
 
 use Tangence::Registry;
 use t::Ball;
@@ -20,8 +22,11 @@ is_deeply( $registry->get_prop_objects,
            { 0 => 'Tangence::Registry' },
            '$registry objects initially has only registry' );
 
+my $cb_self;
 my $added_object_id;
-$registry->subscribe_event( "object_constructed", sub { $added_object_id = shift } );
+$registry->subscribe_event(
+   object_constructed => sub { ( $cb_self, $added_object_id ) = @_ }
+);
 
 my $ball = $registry->construct(
    "t::Ball",
@@ -40,8 +45,15 @@ is_deeply( $registry->get_prop_objects,
              1 => 't::Ball[colour="red"]' },
            '$registry objects now has ball too' );
 
+identical( $cb_self, $registry, '$cb_self is $registry' );
 is( $added_object_id, "1", '$added_object_id is 1' );
+
+undef $cb_self;
 
 ok( $registry->get_by_id( "1" ) == $ball, '$registry->get_by_id "1"' );
 
 ok( !defined $registry->get_by_id( "2" ), '$registry->get_by_id "2"' );
+
+memory_cycle_ok( $ball, '$ball has no memory cycles' );
+
+memory_cycle_ok( $registry, '$registry has no memory cycles' );

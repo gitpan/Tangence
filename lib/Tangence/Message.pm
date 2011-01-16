@@ -1,20 +1,21 @@
 #  You may distribute under the terms of either the GNU General Public License
 #  or the Artistic License (the same terms as Perl itself)
 #
-#  (C) Paul Evans, 2010 -- leonerd@leonerd.org.uk
+#  (C) Paul Evans, 2010-2011 -- leonerd@leonerd.org.uk
 
 package Tangence::Message;
 
 use strict;
 use warnings;
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 
 use Carp;
 
 use Tangence::Constants;
 
 use Encode qw( encode_utf8 decode_utf8 );
+use Scalar::Util qw( weaken );
 
 # Normally we don't care about hash key order. But, when writing test scripts
 # that will assert on the serialisation bytes, we do. Setting this to some
@@ -316,8 +317,9 @@ sub pack_obj
 
          $self->pack_typed( 'list(any)', $smasharr );
 
+         weaken( my $weakstream = $stream );
          $stream->{peer_hasobj}->{$id} = $d->subscribe_event( 
-            destroy => sub { $stream->object_destroyed( @_ ) },
+            destroy => sub { $weakstream->object_destroyed( @_ ) if $weakstream },
          );
       }
 
