@@ -8,7 +8,7 @@ package Tangence::Object;
 use strict;
 use warnings;
 
-our $VERSION = '0.03';
+our $VERSION = '0.04';
 
 use Carp;
 
@@ -209,7 +209,9 @@ sub fire_event
 
    $self->can_event( $event ) or croak "$self has no event $event";
 
-   foreach my $cb ( @{ $self->{event_subs}->{$event} } ) {
+   my $sublist = $self->{event_subs}->{$event} or return;
+
+   foreach my $cb ( @$sublist ) {
       $cb->( $self, @args );
    }
 }
@@ -234,7 +236,7 @@ sub unsubscribe_event
    my $self = shift;
    my ( $event, $id ) = @_;
 
-   my $sublist = $self->{event_subs}->{$event};
+   my $sublist = $self->{event_subs}->{$event} or return;
 
    my $index;
    for( $index = 0; $index < @$sublist; $index++ ) {
@@ -282,7 +284,7 @@ sub unwatch_property
    my $self = shift;
    my ( $prop, $id ) = @_;
 
-   my $watchlist = $self->{properties}->{$prop}->[1];
+   my $watchlist = $self->{properties}->{$prop}->[1] or return;
 
    my $index;
    for( $index = 0; $index < @$watchlist; $index++ ) {
@@ -310,7 +312,7 @@ sub handle_request_CALL
 
    my $result = $self->$m( $ctx, @args );
 
-   my $response = Tangence::Message->new( $ctx->connection, MSG_RESULT );
+   my $response = Tangence::Message->new( $ctx->stream, MSG_RESULT );
    $response->pack_typed( $mdef->{ret}, $result ) if $mdef->{ret};
 
    return $response;
@@ -343,7 +345,7 @@ sub handle_request_GETPROP
 
    my $result = $self->$m();
 
-   return Tangence::Message->new( $ctx->connection, MSG_RESULT )
+   return Tangence::Message->new( $ctx->stream, MSG_RESULT )
       ->pack_any( $result );
 }
 

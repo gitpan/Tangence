@@ -20,43 +20,52 @@ name: Tangence
 provides:
   Net::Async::Tangence::Client:
     file: lib/Net/Async/Tangence/Client.pm
-    version: 0.03
+    version: 0.04
   Net::Async::Tangence::Protocol:
     file: lib/Net/Async/Tangence/Protocol.pm
-    version: 0.03
+    version: 0.04
   Net::Async::Tangence::Server:
     file: lib/Net/Async/Tangence/Server.pm
-    version: 0.03
-  Net::Async::Tangence::ServerContext:
-    file: lib/Net/Async/Tangence/ServerContext.pm
-    version: 0.03
+    version: 0.04
   Net::Async::Tangence::ServerProtocol:
     file: lib/Net/Async/Tangence/ServerProtocol.pm
-    version: 0.03
+    version: 0.04
   Tangence:
     file: lib/Tangence.pm
-    version: 0.03
+    version: 0.04
+  Tangence::Client:
+    file: lib/Tangence/Client.pm
+    version: 0.04
   Tangence::Constants:
     file: lib/Tangence/Constants.pm
-    version: 0.03
+    version: 0.04
   Tangence::Message:
     file: lib/Tangence/Message.pm
-    version: 0.03
+    version: 0.04
   Tangence::Meta::Class:
     file: lib/Tangence/Meta/Class.pm
-    version: 0.03
+    version: 0.04
   Tangence::Metacode:
     file: lib/Tangence/Metacode.pm
-    version: 0.03
+    version: 0.04
   Tangence::Object:
     file: lib/Tangence/Object.pm
-    version: 0.03
+    version: 0.04
   Tangence::ObjectProxy:
     file: lib/Tangence/ObjectProxy.pm
-    version: 0.03
+    version: 0.04
   Tangence::Registry:
     file: lib/Tangence/Registry.pm
-    version: 0.03
+    version: 0.04
+  Tangence::Server:
+    file: lib/Tangence/Server.pm
+    version: 0.04
+  Tangence::Server::Context:
+    file: lib/Tangence/Server/Context.pm
+    version: 0.04
+  Tangence::Stream:
+    file: lib/Tangence/Stream.pm
+    version: 0.04
 requires:
   Encode: 0
   IO::Async::Listener: 0.36
@@ -65,6 +74,7 @@ requires:
   IO::Async::Stream: 0
   IO::Async::Test: 0
   URI::Split: 0
+  perl: 5.01
 resources:
   license: http://dev.perl.org/licenses/
-version: 0.03
+version: 0.04

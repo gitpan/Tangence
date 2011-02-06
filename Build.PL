@@ -12,6 +12,7 @@ my $build = Module::Build->new(
       'IO::Async::Protocol::Stream' => 0,
       'IO::Async::Stream' => 0,
       'IO::Async::Test' => 0,
+      'perl' => 5.010, # pack/unpack > specifiers
       'URI::Split' => 0,
    },
    build_requires => {
@@ -24,6 +25,8 @@ my $build = Module::Build->new(
    },
    license => 'perl',
    create_makefile_pl => 'traditional',
+   create_license => 1,
+   create_readme  => 1,
 );
-  
+
 $build->create_build_script;
