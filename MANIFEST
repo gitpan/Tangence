@@ -3,10 +3,6 @@ bin/tangence-subscribeall
 Build.PL
 Changes
 doc/Tangence-overview.txt
-lib/Net/Async/Tangence/Client.pm
-lib/Net/Async/Tangence/Protocol.pm
-lib/Net/Async/Tangence/Server.pm
-lib/Net/Async/Tangence/ServerProtocol.pm
 lib/Tangence.pm
 lib/Tangence/Client.pm
 lib/Tangence/Constants.pm
@@ -37,10 +33,6 @@ t/23close.t
 t/30props-cbs.t
 t/31props-cache.t
 t/32objects.t
-t/50async-protocol.t
-t/51async-server.t
-t/52async-client.t
-t/53async-xlink.t
 t/99pod.t
 t/Bag.pm
 t/Ball.pm

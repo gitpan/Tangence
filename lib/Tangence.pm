@@ -12,7 +12,7 @@ use warnings;
 # It is provided simply to keep CPAN happy:
 #   cpan -i Tangence
 
-our $VERSION = '0.04';
+our $VERSION = '0.05';
 
 =head1 NAME
 
@@ -35,5 +35,4 @@ Paul Evans <leonerd@leonerd.org.uk>
 
 =cut
 
-# Keep perl happy; keep Britain tidy
-1;
+0x55AA;

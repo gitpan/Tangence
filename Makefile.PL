@@ -7,11 +7,6 @@ WriteMakefile
           'VERSION_FROM' => 'lib/Tangence.pm',
           'PREREQ_PM' => {
                            'Encode' => 0,
-                           'IO::Async::Listener' => '0.36',
-                           'IO::Async::Loop' => '0.16',
-                           'IO::Async::Protocol::Stream' => 0,
-                           'IO::Async::Stream' => 0,
-                           'IO::Async::Test' => 0,
                            'Test::Exception' => 0,
                            'Test::HexString' => 0,
                            'Test::Identity' => 0,
