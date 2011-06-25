@@ -1,14 +1,14 @@
 #  You may distribute under the terms of either the GNU General Public License
 #  or the Artistic License (the same terms as Perl itself)
 #
-#  (C) Paul Evans, 2010 -- leonerd@leonerd.org.uk
+#  (C) Paul Evans, 2010-2011 -- leonerd@leonerd.org.uk
 
 package Tangence::Meta::Class;
 
 use strict;
 use warnings;
 
-our $VERSION = '0.05';
+our $VERSION = '0.06';
 
 our %metas; # cache one per class
 
@@ -28,9 +28,9 @@ sub new
 
    $self->{superclasses} = [ @{"$self->{name}::ISA"}     ];
 
-   $self->{methods}      = $args{methods} || { %{"$self->{name}::METHODS"} };
-   $self->{events}       = $args{events}  || { %{"$self->{name}::EVENTS"}  };
-   $self->{props}        = $args{props}   || { %{"$self->{name}::PROPS"}   };
+   $self->{methods}      = $args{methods} || {};
+   $self->{events}       = $args{events}  || {};
+   $self->{props}        = $args{props}   || {};
 
    return $self;
 }
@@ -62,7 +62,10 @@ sub superclasses
 sub supermetas
 {
    my $self = shift;
-   return map { Tangence::Meta::Class->new( $_ ) } $self->superclasses;
+   my @supers = $self->superclasses;
+   # If I have no superclasses, then use Tangence::Object instead
+   @supers = "Tangence::Object" if !@supers and $self->{name} ne "Tangence::Object";
+   return map { Tangence::Meta::Class->new( $_ ) } @supers;
 }
 
 sub can_method

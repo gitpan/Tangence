@@ -1,7 +1,7 @@
 #  You may distribute under the terms of either the GNU General Public License
 #  or the Artistic License (the same terms as Perl itself)
 #
-#  (C) Paul Evans, 2010 -- leonerd@leonerd.org.uk
+#  (C) Paul Evans, 2010-2011 -- leonerd@leonerd.org.uk
 
 package Tangence::Registry;
 
@@ -9,11 +9,13 @@ use strict;
 use warnings;
 use base qw( Tangence::Object );
 
-our $VERSION = '0.05';
+our $VERSION = '0.06';
 
 use Carp;
 
 use Tangence::Constants;
+
+use Tangence::Compiler::Parser;
 
 use Scalar::Util qw( weaken );
 
@@ -72,6 +74,7 @@ connections to that server.
 sub new
 {
    my $class = shift;
+   my %args = @_;
 
    my $id = 0;
 
@@ -88,6 +91,20 @@ sub new
 
    $self->{nextid}  = 1;
    $self->{freeids} = []; # free'd ids we can reuse
+
+   if( my $tanfile = $args{tanfile} ) {
+      my $parsed = Tangence::Compiler::Parser->new->from_file( $tanfile );
+
+      $self->{classes} = { map {
+         my $class = $_;
+         $class =~ s{\.}{::}g;
+
+         $class => Tangence::Meta::Class->new( $class, %{ $parsed->{$_} } )
+      } keys %$parsed };
+   }
+   else {
+      croak "Expected 'tanfile'";
+   }
 
    return $self;
 }
@@ -132,6 +149,8 @@ sub construct
    my ( $type, @args ) = @_;
 
    my $id = shift @{ $self->{freeids} } || ( $self->{nextid}++ );
+
+   exists $self->{classes}{$type} or croak "Registry cannot construct a '$type' as no class definition exists";
 
    eval { $type->can( "new" ) } or croak "Registry cannot construct a '$type' as it has no ->new() method";
 

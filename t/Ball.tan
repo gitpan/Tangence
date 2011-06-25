@@ -1,0 +1,11 @@
+include "Colourable.tan"
+
+class t.Ball {
+  isa t.Colourable;
+
+  method bounce(str) -> str;
+
+  event bounced(str);
+
+  smashed prop size = int;
+}

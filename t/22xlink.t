@@ -3,7 +3,7 @@
 use strict;
 
 use Test::More tests => 21;
-use Test::Exception;
+use Test::Fatal qw( dies_ok );
 use Test::Memory::Cycle;
 
 use Tangence::Constants;
@@ -15,7 +15,9 @@ use Tangence::Client;
 use t::Ball;
 use t::TestServerClient;
 
-my $registry = Tangence::Registry->new();
+my $registry = Tangence::Registry->new(
+   tanfile => "t/Ball.tan",
+);
 my $ball = $registry->construct(
    "t::Ball",
    colour => "red",
