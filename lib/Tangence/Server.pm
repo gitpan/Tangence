@@ -10,7 +10,7 @@ use warnings;
 
 use base qw( Tangence::Stream );
 
-our $VERSION = '0.06';
+our $VERSION = '0.07';
 
 use Carp;
 
@@ -357,7 +357,7 @@ sub _install_watch
    my ( $object, $prop ) = @_;
 
    my $pdef = $object->can_property( $prop );
-   my $dim = $pdef->{dim};
+   my $dim = $pdef->dimension;
 
    weaken( my $weakself = $self );
 

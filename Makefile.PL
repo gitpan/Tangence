@@ -18,7 +18,9 @@ WriteMakefile
                            'URI::Split' => 0
                          },
           'INSTALLDIRS' => 'site',
-          'EXE_FILES' => [],
+          'EXE_FILES' => [
+                           'bin/tangence-dumptan'
+                         ],
           'PL_FILES' => {}
         )
 ;

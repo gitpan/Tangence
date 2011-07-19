@@ -7,155 +7,145 @@ package Tangence::Meta::Class;
 
 use strict;
 use warnings;
+use base qw( Tangence::Compiler::Class );
 
-our $VERSION = '0.06';
+use Tangence::Constants;
 
-our %metas; # cache one per class
+use Tangence::Compiler::Method;
+use Tangence::Compiler::Event;
+use Tangence::Compiler::Property;
+
+use Carp;
+
+our $VERSION = '0.07';
+
+our %metas; # cache one per class, keyed by _Tangence_ class name
+
+# It would be really useful to put this in List::Utils or somesuch
+sub pairmap(&@)
+{
+   my $code = shift;
+   return map { $code->( local $a = shift, local $b = shift ) } 0 .. @_/2-1;
+}
 
 sub new
 {
    my $class = shift;
-   my ( $name, %args ) = @_;
+   my %args = @_;
+   my $name = $args{name};
 
-   return $metas{$name} if exists $metas{$name};
-
-   my $self = $metas{$name} = bless {
-      name => $name,
-   }, $class;
-
-   no strict 'refs';
-   no warnings 'once'; # In case these vars are not defined
-
-   $self->{superclasses} = [ @{"$self->{name}::ISA"}     ];
-
-   $self->{methods}      = $args{methods} || {};
-   $self->{events}       = $args{events}  || {};
-   $self->{props}        = $args{props}   || {};
-
-   return $self;
+   return $metas{$name} ||= $class->SUPER::new( @_ );
 }
 
-sub renew
+sub declare
 {
    my $class = shift;
-   my ( $name ) = @_;
+   my ( $perlname, %args ) = @_;
+
+   ( my $name = $perlname ) =~ s{::}{.}g;
+
+   my %methods;
+   foreach ( keys %{ $args{methods} } ) {
+      $methods{$_} = Tangence::Compiler::Method->new(
+         name => $_,
+         %{ $args{methods}{$_} },
+         argtypes => $args{methods}{$_}{args},
+      );
+   }
+
+   my %events;
+   foreach ( keys %{ $args{events} } ) {
+      $events{$_} = Tangence::Compiler::Event->new(
+         name => $_,
+         %{ $args{events}{$_} },
+         argtypes => $args{events}{$_}{args},
+      );
+   }
+
+   my %properties;
+   foreach ( keys %{ $args{props} } ) {
+      $properties{$_} = Tangence::Compiler::Property->new(
+         name => $_,
+         %{ $args{props}{$_} },
+         dimension => $args{props}{$_}{dim} || DIM_SCALAR,
+      );
+   }
+
+   my @args = (
+      name       => $name,
+      methods    => \%methods,
+      events     => \%events,
+      properties => \%properties,
+   );
 
    if( exists $metas{$name} ) {
       my $oldself = $metas{$name};
       local $metas{$name};
 
-      my $newself = $class->new( @_ );
+      my $newself = $class->new( @args );
 
       %$oldself = %$newself;
    }
    else {
-      $class->new( @_ );
+      $class->new( @args );
    }
+}
+
+sub for_perlname
+{
+   my $class = shift;
+   my ( $perlname ) = @_;
+
+   ( my $name = $perlname ) =~ s{::}{.}g;
+   return $metas{$name} or croak "Unknown Tangence::Meta::Class for '$perlname'";
+}
+
+sub perlname
+{
+   my $self = shift;
+   ( my $perlname = $self->name ) =~ s{\.}{::}g; # s///rg in 5.14
+   return $perlname;
 }
 
 sub superclasses
 {
    my $self = shift;
-   return @{ $self->{superclasses} };
-}
 
-sub supermetas
-{
-   my $self = shift;
-   my @supers = $self->superclasses;
-   # If I have no superclasses, then use Tangence::Object instead
-   @supers = "Tangence::Object" if !@supers and $self->{name} ne "Tangence::Object";
-   return map { Tangence::Meta::Class->new( $_ ) } @supers;
-}
+   my @supers = $self->SUPER::superclasses;
 
-sub can_method
-{
-   my $self = shift;
-   my ( $method ) = @_;
-
-   return $self->{methods}{$method} if defined $method and exists $self->{methods}{$method};
-
-   my %methods = %{ $self->{methods} };
-
-   foreach my $supermeta ( $self->supermetas ) {
-      my $m = $supermeta->can_method( $method );
-      if( defined $method ) {
-         return $m if $m;
-      }
-      else {
-         exists $methods{$_} or $methods{$_} = $m->{$_} for keys %$m;
-      }
+   if( !@supers and $self->perlname ne "Tangence::Object" ) {
+      @supers = Tangence::Meta::Class->for_perlname( "Tangence::Object" );
    }
 
-   return \%methods unless defined $method;
-   return undef;
+   return @supers;
 }
 
-sub can_event
+sub method
 {
    my $self = shift;
-   my ( $event ) = @_;
-
-   return $self->{events}{$event} if defined $event and exists $self->{events}{$event};
-
-   my %events = %{ $self->{events} };
-
-   foreach my $supermeta ( $self->supermetas ) {
-      my $e = $supermeta->can_event( $event );
-      if( defined $event ) {
-         return $e if $e;
-      }
-      else {
-         exists $events{$_} or $events{$_} = $e->{$_} for keys %$e;
-      }
-   }
-
-   return \%events unless defined $event;
-   return undef;
+   my ( $name ) = @_;
+   return $self->methods->{$name};
 }
 
-sub can_property
+sub event
 {
    my $self = shift;
-   my ( $prop ) = @_;
+   my ( $name ) = @_;
+   return $self->events->{$name};
+}
 
-   return $self->{props}{$prop} if defined $prop and exists $self->{props}{$prop};
-
-   my %props = %{ $self->{props} };
-
-   return $props{$prop} if defined $prop and exists $props{$prop};
-
-   foreach my $supermeta ( $self->supermetas ) {
-      my $p = $supermeta->can_property( $prop );
-      if( defined $prop ) {
-         return $p if $p;
-      }
-      else {
-         exists $props{$_} or $props{$_} = $p->{$_} for keys %$p;
-      }
-   }
-
-   return \%props unless defined $prop;
-   return undef;
+sub property
+{
+   my $self = shift;
+   my ( $name ) = @_;
+   return $self->properties->{$name};
 }
 
 sub smashkeys
 {
    my $self = shift;
-
-   my %props = %{ $self->{props} };
-
    my %smash;
-
-   $props{$_}->{smash} and $smash{$_} = 1 for keys %props;
-
-   foreach my $supermeta ( $self->supermetas ) {
-      my $supkeys = $supermeta->smashkeys;
-
-      # Merge keys we don't yet have
-      $smash{$_} = 1 for keys %$supkeys;
-   }
-
+   $smash{$_->name} = 1 for grep { $_->smashed } values %{ $self->properties };
    return \%smash;
 }
 
@@ -164,10 +154,24 @@ sub introspect
    my $self = shift;
 
    my $ret = {
-      methods    => $self->can_method,
-      events     => $self->can_event,
-      properties => $self->can_property,
-      isa        => [ $self->{name}, $self->superclasses ],
+      methods    => { 
+         pairmap {
+            $a => { args => [ $b->argtypes ], ret => $b->ret || "" }
+         } %{ $self->methods }
+      },
+      events     => {
+         pairmap {
+            $a => { args => [ $b->argtypes ] }
+         } %{ $self->events }
+      },
+      properties => {
+         pairmap {
+            $a => { type => $b->type, dim => $b->dimension, $b->smashed ? ( smash => 1 ) : () }
+         } %{ $self->properties }
+      },
+      isa        => [
+         grep { $_ ne "Tangence::Object" } $self->perlname, map { $_->perlname } $self->superclasses
+      ],
    };
 
    return $ret;

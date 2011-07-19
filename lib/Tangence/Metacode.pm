@@ -8,7 +8,7 @@ package Tangence::Metacode;
 use strict;
 use warnings;
 
-our $VERSION = '0.06';
+our $VERSION = '0.07';
 
 use Carp;
 
@@ -19,17 +19,18 @@ sub init_class
 {
    my $class = shift;
 
-   my $meta = Tangence::Meta::Class->new( $class );
+   my $meta = Tangence::Meta::Class->for_perlname( $class );
 
-   foreach my $superclass ( $meta->superclasses ) {
-      init_class( $superclass ) unless defined &{"${superclass}::_has_Tangence"};
+   foreach my $superclass ( $meta->direct_superclasses ) {
+      my $name = $superclass->name;
+      init_class( $name ) unless defined &{"${name}::_has_Tangence"};
    }
 
    my %subs = (
       _has_Tangence => sub() { 1 },
    );
 
-   my $props = $meta->can_property;
+   my $props = $meta->properties;
 
    foreach my $prop ( keys %$props ) {
       my $pdef = $props->{$prop};
@@ -63,7 +64,7 @@ sub init_class_property
                        : $_->{on_set}->( $self, $newval ) for @$cbs;
    };
 
-   my $dim = $pdef->{dim};
+   my $dim = $pdef->dimension;
 
    my $dimname = DIMNAMES->[$dim];
    if( my $code = __PACKAGE__->can( "init_class_property_$dimname" ) ) {

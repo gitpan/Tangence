@@ -72,11 +72,9 @@ sub parse
             exists $package{$classname} and
                $self->fail( "Already have a class called $classname" );
 
-            $self->scope_of(
-               '{', 
-               sub { $package{$classname} = $self->parse_classblock },
-               '}'
-            );
+            my $class = $self->scope_of( '{', sub { $self->parse_classblock( $classname ) }, '}' );
+
+            $package{$classname} = $class;
          }
          when( 'include' ) {
             my $filename = dirname($self->{filename}) . "/" . $self->token_string;
@@ -137,39 +135,49 @@ An C<isa> declaration declares a superclass of the class, by its name (C)
 sub parse_classblock
 {
    my $self = shift;
+   my ( $classname ) = @_;
 
-   my %class;
+   my %methods;
+   my %events;
+   my %properties;
+   my @superclasses;
 
    while( !$self->at_eos ) {
       given( $self->token_kw(qw( method event prop smashed isa )) ) {
          when( 'method' ) {
             my $methodname = $self->token_ident;
 
-            exists $class{methods}{$methodname} and
+            exists $methods{$methodname} and
                $self->fail( "Already have a method called $methodname" );
 
-            my $mdef = $class{methods}{$methodname} = {};
-
-            $mdef->{args} = $self->parse_typelist;
-
-            $mdef->{ret} = "";
+            my $args = $self->parse_arglist;
+            my $ret;
 
             $self->maybe( sub {
                $self->expect( '->' );
 
-               $mdef->{ret} = $self->parse_type;
+               $ret = $self->parse_type;
             } );
+
+            $methods{$methodname} = $self->make_method(
+               name => $methodname,
+               argtypes => $args,
+               ret  => $ret,
+            );
          }
 
          when( 'event' ) {
             my $eventname = $self->token_ident;
 
-            exists $class{events}{$eventname} and
+            exists $events{$eventname} and
                $self->fail( "Already have an event called $eventname" );
 
-            my $edef = $class{events}{$eventname} = {};
+            my $args = $self->parse_arglist;
 
-            $edef->{args} = $self->parse_typelist;
+            $events{$eventname} = $self->make_event(
+               name => $eventname,
+               argtypes => $args,
+            );
          }
 
          my $smashed = 0;
@@ -183,12 +191,8 @@ sub parse_classblock
          when( 'prop' ) {
             my $propname = $self->token_ident;
 
-            exists $class{props}{$propname} and
+            exists $properties{$propname} and
                $self->fail( "Already have a property called $propname" );
-
-            my $pdef = $class{props}{$propname} = {};
-
-            $pdef->{smash}++ if $smashed;
 
             $self->expect( '=' );
 
@@ -198,35 +202,57 @@ sub parse_classblock
                $self->expect( 'of' );
             } );
 
-            $pdef->{type} = $self->parse_type;
+            my $type = $self->parse_type;
 
-            $pdef->{dim} = $dim;
+            $properties{$propname} = $self->make_property(
+               name       => $propname,
+               smashed    => $smashed,
+               dimension  => $dim,
+               type       => $type,
+            );
          }
 
          when( 'isa' ) {
             my $supername = $self->token_ident;
 
-            exists $self->{package}{$supername} or
+            my $super = $self->{package}{$supername} or
                $self->fail( "Unrecognised superclass $supername" );
 
-            push @{ $class{isa} }, $supername;
+            push @superclasses, $super;
          }
       }
 
       $self->expect( ';' );
    }
 
-   return \%class;
+   return $self->make_class(
+      name         => $classname,
+      methods      => \%methods,
+      events       => \%events,
+      properties   => \%properties,
+      superclasses => \@superclasses,
+   );
 }
 
-sub parse_typelist
+sub parse_arglist
 {
    my $self = shift;
    return $self->scope_of(
       "(",
-      sub { $self->list_of( ",", \&parse_type ) },
+      sub { $self->list_of( ",", \&parse_arg ) },
       ")",
    );
+}
+
+sub parse_arg
+{
+   my $self = shift;
+   my $type = $self->parse_type;
+   $self->maybe( sub {
+      # Ignore it for now
+      $self->token_ident;
+   } );
+   return $type;
 }
 
 =head2 Types
@@ -291,6 +317,60 @@ sub parse_dim
    my $dimname = $self->token_kw( keys %dimensions );
 
    return $dimensions{$dimname};
+}
+
+=head1 SUBCLASS METHODS
+
+If this class is subclassed, the following methods may be overridden to
+customise the behaviour. They allow the subclass to return different objects
+in the syntax tree.
+
+=cut
+
+=head2 $class = $parser->make_class( %args )
+
+Return a new instance of L<Tangence::Compiler::Class> to go in a package.
+
+=cut
+
+sub make_class
+{
+   shift;
+   require Tangence::Compiler::Class;
+   return Tangence::Compiler::Class->new( @_ );
+}
+
+=head2 $method = $parser->make_method( %args )
+
+=head2 $event = $parser->make_event( %args )
+
+=head2 $property = $parser->make_property( %args )
+
+Return a new instance of L<Tangence::Compiler::Method>,
+L<Tangence::Compiler::Event> or L<Tangence::Compiler::Property> to go in a
+class.
+
+=cut
+
+sub make_method
+{
+   shift;
+   require Tangence::Compiler::Method;
+   return Tangence::Compiler::Method->new( @_ );
+}
+
+sub make_event
+{
+   shift;
+   require Tangence::Compiler::Event;
+   return Tangence::Compiler::Event->new( @_ );
+}
+
+sub make_property
+{
+   shift;
+   require Tangence::Compiler::Property;
+   return Tangence::Compiler::Property->new( @_ );
 }
 
 =head1 AUTHOR

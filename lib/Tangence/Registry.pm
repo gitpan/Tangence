@@ -9,7 +9,7 @@ use strict;
 use warnings;
 use base qw( Tangence::Object );
 
-our $VERSION = '0.06';
+our $VERSION = '0.07';
 
 use Carp;
 
@@ -19,7 +19,7 @@ use Tangence::Compiler::Parser;
 
 use Scalar::Util qw( weaken );
 
-Tangence::Meta::Class->renew(
+Tangence::Meta::Class->declare(
    __PACKAGE__,
 
    methods => {
@@ -76,12 +76,15 @@ sub new
    my $class = shift;
    my %args = @_;
 
+   my $tanfile = $args{tanfile};
+   croak "Expected 'tanfile'" unless defined $tanfile;
+
    my $id = 0;
 
    my $self = $class->SUPER::new(
       id => $id,
       registry => "BOOTSTRAP",
-      meta => Tangence::Meta::Class->new( $class ),
+      meta => Tangence::Meta::Class->for_perlname( $class ),
    );
    weaken( $self->{registry} = $self );
    
@@ -92,18 +95,12 @@ sub new
    $self->{nextid}  = 1;
    $self->{freeids} = []; # free'd ids we can reuse
 
-   if( my $tanfile = $args{tanfile} ) {
-      my $parsed = Tangence::Compiler::Parser->new->from_file( $tanfile );
+   my $parsed = Tangence::Registry::Parser->new->from_file( $tanfile );
 
-      $self->{classes} = { map {
-         my $class = $_;
-         $class =~ s{\.}{::}g;
+   $self->{classes} = \my %classes;
 
-         $class => Tangence::Meta::Class->new( $class, %{ $parsed->{$_} } )
-      } keys %$parsed };
-   }
-   else {
-      croak "Expected 'tanfile'";
+   foreach ( values %$parsed ) {
+      $classes{$_->perlname} = $_;
    }
 
    return $self;
@@ -184,12 +181,13 @@ sub destroy_object
    push @{ $self->{freeids} }, $id; # Recycle the ID
 }
 
-sub get_meta_class
+package Tangence::Registry::Parser;
+use base qw( Tangence::Compiler::Parser );
+
+sub make_class
 {
    my $self = shift;
-   my ( $class ) = @_;
-
-   return Tangence::Meta::Class->new( $class );
+   return Tangence::Meta::Class->new( @_ );
 }
 
 =head1 AUTHOR

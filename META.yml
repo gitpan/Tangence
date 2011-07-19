@@ -19,43 +19,58 @@ name: Tangence
 provides:
   Tangence:
     file: lib/Tangence.pm
-    version: 0.06
+    version: 0.07
   Tangence::Client:
     file: lib/Tangence/Client.pm
-    version: 0.06
+    version: 0.07
+  Tangence::Compiler::Class:
+    file: lib/Tangence/Compiler/Class.pm
+    version: 0.07
+  Tangence::Compiler::Event:
+    file: lib/Tangence/Compiler/Event.pm
+    version: 0.07
+  Tangence::Compiler::Method:
+    file: lib/Tangence/Compiler/Method.pm
+    version: 0.07
   Tangence::Compiler::Parser:
     file: lib/Tangence/Compiler/Parser.pm
     version: 0
+  Tangence::Compiler::Property:
+    file: lib/Tangence/Compiler/Property.pm
+    version: 0.07
   Tangence::Constants:
     file: lib/Tangence/Constants.pm
-    version: 0.06
+    version: 0.07
   Tangence::Message:
     file: lib/Tangence/Message.pm
-    version: 0.06
+    version: 0.07
   Tangence::Meta::Class:
     file: lib/Tangence/Meta/Class.pm
-    version: 0.06
+    version: 0.07
   Tangence::Metacode:
     file: lib/Tangence/Metacode.pm
-    version: 0.06
+    version: 0.07
   Tangence::Object:
     file: lib/Tangence/Object.pm
-    version: 0.06
+    version: 0.07
   Tangence::ObjectProxy:
     file: lib/Tangence/ObjectProxy.pm
-    version: 0.06
+    version: 0.07
   Tangence::Registry:
     file: lib/Tangence/Registry.pm
-    version: 0.06
+    version: 0.07
+  Tangence::Registry::Parser:
+    file: lib/Tangence/Registry.pm
+    version: 0
   Tangence::Server:
     file: lib/Tangence/Server.pm
-    version: 0.06
+    version: 0.07
   Tangence::Server::Context:
     file: lib/Tangence/Server/Context.pm
-    version: 0.06
+    version: 0.07
   Tangence::Stream:
     file: lib/Tangence/Stream.pm
-    version: 0.06
+    version: 0.07
 requires:
   Encode: 0
   Exporter: 5.57
@@ -64,4 +79,4 @@ requires:
   perl: 5.01
 resources:
   license: http://dev.perl.org/licenses/
-version: 0.06
+version: 0.07

@@ -8,7 +8,7 @@ package Tangence::Object;
 use strict;
 use warnings;
 
-our $VERSION = '0.06';
+our $VERSION = '0.07';
 
 use Carp;
 
@@ -17,7 +17,7 @@ use Tangence::Metacode;
 
 use Tangence::Meta::Class;
 
-Tangence::Meta::Class->renew(
+Tangence::Meta::Class->declare(
    __PACKAGE__,
 
    events => {
@@ -56,14 +56,14 @@ sub new
    my $self = bless {
       id => $id,
       registry => $registry,
-      meta => $args{meta} || $registry->get_meta_class( $class ),
+      meta => $args{meta} || Tangence::Meta::Class->for_perlname( $class ),
 
       event_subs => {},   # {$event} => [ @cbs ]
 
       properties => {}, # {$prop} => [ $value, \@callbacks ]
    }, $class;
 
-   my $properties = $self->can_property();
+   my $properties = $self->_meta->properties;
    foreach my $prop ( keys %$properties ) {
       $self->_new_property( $prop, $properties->{$prop} );
    }
@@ -76,7 +76,7 @@ sub _new_property
    my $self = shift;
    my ( $prop, $pdef ) = @_;
 
-   my $dim = $pdef->{dim};
+   my $dim = $pdef->dimension;
 
    my $initial;
 
@@ -217,25 +217,25 @@ sub smash
 sub _meta
 {
    my $self = shift;
-   return ref $self ? $self->{meta} : Tangence::Meta::Class->new( $self );
+   return ref $self ? $self->{meta} : Tangence::Meta::Class->for_perlname( $self );
 }
 
 sub can_method
 {
    my $self = shift;
-   return $self->_meta->can_method( @_ );
+   return $self->_meta->method( @_ );
 }
 
 sub can_event
 {
    my $self = shift;
-   return $self->_meta->can_event( @_ );
+   return $self->_meta->event( @_ );
 }
 
 sub can_property
 {
    my $self = shift;
-   return $self->_meta->can_property( @_ );
+   return $self->_meta->property( @_ );
 }
 
 sub smashkeys
@@ -382,7 +382,7 @@ sub watch_property
       $callbacks->{on_updated} = $on_updated;
    }
    else {
-      foreach my $name ( @{ CHANGETYPES->{$pdef->{dim}} } ) {
+      foreach my $name ( @{ CHANGETYPES->{$pdef->dimension} } ) {
          ref( $callbacks->{$name} = delete $callbacks{$name} ) eq "CODE"
             or croak "Expected '$name' as a CODE ref";
       }
@@ -434,12 +434,12 @@ sub handle_request_CALL
    my $m = "method_$method";
    $self->can( $m ) or die "Object cannot run method $method\n";
 
-   my @args = $message->unpack_all_typed( $mdef->{args} );
+   my @args = $message->unpack_all_typed( [ $mdef->argtypes ] );
 
    my $result = $self->$m( $ctx, @args );
 
    my $response = Tangence::Message->new( $ctx->stream, MSG_RESULT );
-   $response->pack_typed( $mdef->{ret}, $result ) if $mdef->{ret};
+   $response->pack_typed( $mdef->ret, $result ) if $mdef->ret;
 
    return $response;
 }
@@ -454,7 +454,7 @@ sub generate_message_EVENT
    return Tangence::Message->new( $conn, MSG_EVENT )
       ->pack_int( $self->id )
       ->pack_str( $event )
-      ->pack_all_typed( $edef->{args}, @args );
+      ->pack_all_typed( [ $edef->argtypes ], @args );
 }
 
 sub handle_request_GETPROP
@@ -499,7 +499,7 @@ sub generate_message_UPDATE
    my ( $conn, $prop, $how, @args ) = @_;
 
    my $pdef = $self->can_property( $prop ) or die "Object does not have property $prop\n";
-   my $dim = $pdef->{dim};
+   my $dim = $pdef->dimension;
 
    my $message = Tangence::Message->new( $conn, MSG_UPDATE )
       ->pack_int( $self->id )
@@ -508,7 +508,7 @@ sub generate_message_UPDATE
 
    my $dimname = DIMNAMES->[$dim];
    if( my $code = $self->can( "_generate_message_UPDATE_$dimname" ) ) {
-      $code->( $self, $message, $how, $pdef->{type}, @args );
+      $code->( $self, $message, $how, $pdef->type, @args );
    }
    else {
       croak "Unrecognised property dimension $dim for $prop";

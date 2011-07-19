@@ -1,3 +1,4 @@
+bin/tangence-dumptan
 Build.PL
 Changes
 contrib/vim/ftdetect/tangence.vim
@@ -5,7 +6,11 @@ contrib/vim/syntax/tangence.vim
 doc/Tangence-overview.txt
 lib/Tangence.pm
 lib/Tangence/Client.pm
+lib/Tangence/Compiler/Class.pm
+lib/Tangence/Compiler/Event.pm
+lib/Tangence/Compiler/Method.pm
 lib/Tangence/Compiler/Parser.pm
+lib/Tangence/Compiler/Property.pm
 lib/Tangence/Constants.pm
 lib/Tangence/Message.pm
 lib/Tangence/Meta/Class.pm
