@@ -9,7 +9,7 @@ use strict;
 use warnings;
 use base qw( Tangence::Object );
 
-our $VERSION = '0.07';
+our $VERSION = '0.08';
 
 use Carp;
 
@@ -24,17 +24,17 @@ Tangence::Meta::Class->declare(
 
    methods => {
       get_by_id => {
-         args => [qw( int )],
+         args => [ [ id => 'int' ] ],
          ret  => 'obj',
       },
    },
 
    events => {
       object_constructed => {
-         args => [qw( int )],
+         args => [ [ id => 'int' ] ],
       },
       object_destroyed => {
-         args => [qw( int )],
+         args => [ [ id => 'int' ] ],
       },
    },
 
@@ -181,13 +181,22 @@ sub destroy_object
    push @{ $self->{freeids} }, $id; # Recycle the ID
 }
 
-package Tangence::Registry::Parser;
+package # hide from CPAN
+   Tangence::Registry::Parser;
 use base qw( Tangence::Compiler::Parser );
+
+use Tangence::Meta::Property;
 
 sub make_class
 {
    my $self = shift;
    return Tangence::Meta::Class->new( @_ );
+}
+
+sub make_property
+{
+   my $self = shift;
+   return Tangence::Meta::Property->new( @_ );
 }
 
 =head1 AUTHOR

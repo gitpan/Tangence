@@ -7,10 +7,11 @@ package Tangence::Compiler::Parser;
 
 use strict;
 use warnings;
-
 use base qw( Parser::MGC );
 
 use feature qw( switch ); # we like given/when
+
+our $VERSION = '0.08';
 
 use File::Basename qw( dirname );
 
@@ -142,6 +143,8 @@ sub parse_classblock
    my %properties;
    my @superclasses;
 
+   my $class = $self->make_class( name => $classname );
+
    while( !$self->at_eos ) {
       given( $self->token_kw(qw( method event prop smashed isa )) ) {
          when( 'method' ) {
@@ -160,9 +163,10 @@ sub parse_classblock
             } );
 
             $methods{$methodname} = $self->make_method(
-               name => $methodname,
-               argtypes => $args,
-               ret  => $ret,
+               class     => $class,
+               name      => $methodname,
+               arguments => $args,
+               ret       => $ret,
             );
          }
 
@@ -175,8 +179,9 @@ sub parse_classblock
             my $args = $self->parse_arglist;
 
             $events{$eventname} = $self->make_event(
-               name => $eventname,
-               argtypes => $args,
+               class     => $class,
+               name      => $eventname,
+               arguments => $args,
             );
          }
 
@@ -205,6 +210,7 @@ sub parse_classblock
             my $type = $self->parse_type;
 
             $properties{$propname} = $self->make_property(
+               class      => $class,
                name       => $propname,
                smashed    => $smashed,
                dimension  => $dim,
@@ -225,13 +231,14 @@ sub parse_classblock
       $self->expect( ';' );
    }
 
-   return $self->make_class(
-      name         => $classname,
+   $class->define(
       methods      => \%methods,
       events       => \%events,
       properties   => \%properties,
       superclasses => \@superclasses,
    );
+
+   return $class;
 }
 
 sub parse_arglist
@@ -247,12 +254,12 @@ sub parse_arglist
 sub parse_arg
 {
    my $self = shift;
+   my $name;
    my $type = $self->parse_type;
    $self->maybe( sub {
-      # Ignore it for now
-      $self->token_ident;
+      $name = $self->token_ident;
    } );
-   return $type;
+   return $self->make_argument( name => $name, type => $type );
 }
 
 =head2 Types
@@ -327,9 +334,10 @@ in the syntax tree.
 
 =cut
 
-=head2 $class = $parser->make_class( %args )
+=head2 $class = $parser->make_class( name => $name )
 
-Return a new instance of L<Tangence::Compiler::Class> to go in a package.
+Return a new instance of L<Tangence::Compiler::Class> to go in a package. The
+parser will call C<define> on it.
 
 =cut
 
@@ -371,6 +379,20 @@ sub make_property
    shift;
    require Tangence::Compiler::Property;
    return Tangence::Compiler::Property->new( @_ );
+}
+
+=head2 $argument = $parser->make_argument( %args )
+
+Return a new instance of L<Tangence::Compiler::Argument> to use for a method
+or event argument.
+
+=cut
+
+sub make_argument
+{
+   my $self = shift;
+   require Tangence::Compiler::Argument;
+   return Tangence::Compiler::Argument->new( @_ );
 }
 
 =head1 AUTHOR

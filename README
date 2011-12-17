@@ -1,5 +1,5 @@
 NAME
-    "Tangence" - attribute-oriented server/client object remoting framework
+    `Tangence' - attribute-oriented server/client object remoting framework
 
 DESCRIPTION
     Like CORBA only much smaller, lighter, and with heavy emphasis on

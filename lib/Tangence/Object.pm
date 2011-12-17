@@ -8,12 +8,11 @@ package Tangence::Object;
 use strict;
 use warnings;
 
-our $VERSION = '0.07';
+our $VERSION = '0.08';
 
 use Carp;
 
 use Tangence::Constants;
-use Tangence::Metacode;
 
 use Tangence::Meta::Class;
 
@@ -50,8 +49,6 @@ sub new
 
    defined( my $id = delete $args{id} ) or croak "Need a id";
    my $registry = delete $args{registry} or croak "Need a registry";
-
-   Tangence::Metacode::init_class( $class ) unless do { no strict 'refs'; defined &{"${class}::_has_Tangence"} };
 
    my $self = bless {
       id => $id,

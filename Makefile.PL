@@ -3,24 +3,25 @@ require 5.010;
 use ExtUtils::MakeMaker;
 WriteMakefile
 (
-          'NAME' => 'Tangence',
-          'VERSION_FROM' => 'lib/Tangence.pm',
-          'PREREQ_PM' => {
-                           'Encode' => 0,
-                           'Exporter' => '5.57',
-                           'Parser::MGC' => '0.04',
-                           'Test::Fatal' => '0.006',
-                           'Test::HexString' => 0,
-                           'Test::Identity' => 0,
-                           'Test::Memory::Cycle' => 0,
-                           'Test::More' => 0,
-                           'Test::Refcount' => 0,
-                           'URI::Split' => 0
-                         },
-          'INSTALLDIRS' => 'site',
-          'EXE_FILES' => [
-                           'bin/tangence-dumptan'
-                         ],
-          'PL_FILES' => {}
-        )
+  'NAME' => 'Tangence',
+  'VERSION_FROM' => 'lib/Tangence.pm',
+  'PREREQ_PM' => {
+                   'Encode' => 0,
+                   'Exporter' => '5.57',
+                   'Parser::MGC' => '0.04',
+                   'Test::Fatal' => '0.006',
+                   'Test::HexString' => 0,
+                   'Test::Identity' => 0,
+                   'Test::Memory::Cycle' => 0,
+                   'Test::More' => 0,
+                   'Test::Refcount' => 0,
+                   'URI::Split' => 0
+                 },
+  'INSTALLDIRS' => 'site',
+  'EXE_FILES' => [
+                   'bin/tangence-compile-java',
+                   'bin/tangence-dumptan'
+                 ],
+  'PL_FILES' => {}
+)
 ;

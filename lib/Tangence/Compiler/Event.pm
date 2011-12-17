@@ -8,7 +8,9 @@ package Tangence::Compiler::Event;
 use strict;
 use warnings;
 
-our $VERSION = '0.07';
+our $VERSION = '0.08';
+
+use Scalar::Util qw( weaken );
 
 =head1 NAME
 
@@ -32,13 +34,18 @@ Returns a new instance initialised by the given arguments.
 
 =over 8
 
+=item class => Tangence::Compiler::Class
+
+Reference to the containing class
+
 =item name => STRING
 
 Name of the event
 
 =item argtypes => ARRAY
 
-Optional ARRAY reference containing argument types as strings.
+Optional ARRAY reference containing arguments as
+L<Tangence::Compiler::Argument> references.
 
 =back
 
@@ -48,13 +55,27 @@ sub new
 {
    my $class = shift;
    my %args = @_;
-   $args{argtypes} ||= [];
-   bless \%args, $class;
+   $args{arguments} ||= [];
+   my $self = bless \%args, $class;
+   weaken $self->{class};
+   return $self;
 }
 
 =head1 ACCESSORS
 
 =cut
+
+=head2 $class = $event->class
+
+Returns the class the event is a member of
+
+=cut
+
+sub class
+{
+   my $self = shift;
+   return $self->{class};
+}
 
 =head2 $name = $event->name
 
@@ -68,6 +89,18 @@ sub name
    return $self->{name};
 }
 
+=head2 @arguments = $event->arguments
+
+Return the arguments in a list of L<Tangence::Compiler::Argument> references.
+
+=cut
+
+sub arguments
+{
+   my $self = shift;
+   return @{ $self->{arguments} };
+}
+
 =head2 @argtypes = $event->argtypes
 
 Return the argument types in a list of strings.
@@ -77,7 +110,7 @@ Return the argument types in a list of strings.
 sub argtypes
 {
    my $self = shift;
-   return @{ $self->{argtypes} };
+   return map { $_->type } $self->arguments;
 }
 
 =head1 AUTHOR

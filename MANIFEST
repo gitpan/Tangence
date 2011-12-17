@@ -6,6 +6,7 @@ contrib/vim/syntax/tangence.vim
 doc/Tangence-overview.txt
 lib/Tangence.pm
 lib/Tangence/Client.pm
+lib/Tangence/Compiler/Argument.pm
 lib/Tangence/Compiler/Class.pm
 lib/Tangence/Compiler/Event.pm
 lib/Tangence/Compiler/Method.pm
@@ -14,7 +15,7 @@ lib/Tangence/Compiler/Property.pm
 lib/Tangence/Constants.pm
 lib/Tangence/Message.pm
 lib/Tangence/Meta/Class.pm
-lib/Tangence/Metacode.pm
+lib/Tangence/Meta/Property.pm
 lib/Tangence/Object.pm
 lib/Tangence/ObjectProxy.pm
 lib/Tangence/Registry.pm

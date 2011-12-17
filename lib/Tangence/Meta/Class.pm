@@ -13,11 +13,23 @@ use Tangence::Constants;
 
 use Tangence::Compiler::Method;
 use Tangence::Compiler::Event;
-use Tangence::Compiler::Property;
+use Tangence::Compiler::Argument;
+
+use Tangence::Meta::Property;
 
 use Carp;
 
-our $VERSION = '0.07';
+BEGIN {
+   if( eval { require Sub::Name } ) {
+      Sub::Name->import(qw( subname ));
+   }
+   else {
+      # Emulate it by just returning the CODEref and ignoring setting the name
+      *subname = sub { $_[1] };
+   }
+}
+
+our $VERSION = '0.08';
 
 our %metas; # cache one per class, keyed by _Tangence_ class name
 
@@ -44,12 +56,27 @@ sub declare
 
    ( my $name = $perlname ) =~ s{::}{.}g;
 
+   my $self;
+   if( exists $metas{$name} ) {
+      $self = $metas{$name};
+      local $metas{$name};
+
+      my $newself = $class->new( name => $name );
+
+      %$self = %$newself;
+   }
+   else {
+      $self = $class->new( name => $name );
+   }
+
    my %methods;
    foreach ( keys %{ $args{methods} } ) {
       $methods{$_} = Tangence::Compiler::Method->new(
          name => $_,
          %{ $args{methods}{$_} },
-         argtypes => $args{methods}{$_}{args},
+         arguments => [ map {
+            Tangence::Compiler::Argument->new( name => $_->[0], type => $_->[1] )
+         } @{ $args{methods}{$_}{args} } ],
       );
    }
 
@@ -58,36 +85,45 @@ sub declare
       $events{$_} = Tangence::Compiler::Event->new(
          name => $_,
          %{ $args{events}{$_} },
-         argtypes => $args{events}{$_}{args},
+         arguments => [ map {
+            Tangence::Compiler::Argument->new( name => $_->[0], type => $_->[1] )
+         } @{ $args{events}{$_}{args} } ],
       );
    }
 
    my %properties;
    foreach ( keys %{ $args{props} } ) {
-      $properties{$_} = Tangence::Compiler::Property->new(
+      $properties{$_} = Tangence::Meta::Property->new(
          name => $_,
          %{ $args{props}{$_} },
          dimension => $args{props}{$_}{dim} || DIM_SCALAR,
       );
    }
 
-   my @args = (
-      name       => $name,
+   $self->define(
       methods    => \%methods,
       events     => \%events,
       properties => \%properties,
    );
+}
 
-   if( exists $metas{$name} ) {
-      my $oldself = $metas{$name};
-      local $metas{$name};
+sub define
+{
+   my $self = shift;
+   $self->SUPER::define( @_ );
 
-      my $newself = $class->new( @args );
+   my $class = $self->perlname;
 
-      %$oldself = %$newself;
+   my %subs;
+
+   foreach my $prop ( values %{ $self->direct_properties } ) {
+      $prop->build_subs( \%subs );
    }
-   else {
-      $class->new( @args );
+
+   no strict 'refs';
+   foreach my $name ( keys %subs ) {
+      next if defined &{"${class}::${name}"};
+      *{"${class}::${name}"} = subname "${class}::${name}" => $subs{$name};
    }
 }
 
