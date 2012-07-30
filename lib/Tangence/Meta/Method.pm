@@ -3,24 +3,23 @@
 #
 #  (C) Paul Evans, 2011 -- leonerd@leonerd.org.uk
 
-package Tangence::Compiler::Method;
+package Tangence::Meta::Method;
 
 use strict;
 use warnings;
 
-our $VERSION = '0.08';
+our $VERSION = '0.09';
 
 use Scalar::Util qw( weaken );
 
 =head1 NAME
 
-C<Tangence::Compiler::Method> - structure representing one C<Tangence> method
+C<Tangence::Meta::Method> - structure representing one C<Tangence> method
 
 =head1 DESCRIPTION
 
 This data structure object stores information about one L<Tangence> class
-method, as parsed by L<Tangence::Compiler::Parser>. Once constructed, such
-objects are immutable.
+method. Once constructed, such objects are immutable.
 
 =cut
 
@@ -28,13 +27,13 @@ objects are immutable.
 
 =cut
 
-=head2 $method = Tangence::Compiler::Method->new( %args )
+=head2 $method = Tangence::Meta::Method->new( %args )
 
 Returns a new instance initialised by the given arguments.
 
 =over 8
 
-=item class => Tangence::Compiler::Class
+=item class => Tangence::Meta::Class
 
 Reference to the containing class
 
@@ -45,7 +44,7 @@ Name of the method
 =item args => ARRAY
 
 Optional ARRAY reference containing arguments as
-L<Tangence::Compiler::Argument> references.
+L<Tangence::Meta::Argument> references.
 
 =item ret => STRING
 
@@ -95,7 +94,7 @@ sub name
 
 =head2 @arguments = $method->arguments
 
-Return the arguments in a list of L<Tangence::Compiler::Argument> references.
+Return the arguments in a list of L<Tangence::Meta::Argument> references.
 
 =cut
 
@@ -137,4 +136,3 @@ Paul Evans <leonerd@leonerd.org.uk>
 =cut
 
 0x55AA;
-

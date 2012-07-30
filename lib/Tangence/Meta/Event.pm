@@ -3,24 +3,23 @@
 #
 #  (C) Paul Evans, 2011 -- leonerd@leonerd.org.uk
 
-package Tangence::Compiler::Event;
+package Tangence::Meta::Event;
 
 use strict;
 use warnings;
 
-our $VERSION = '0.08';
+our $VERSION = '0.09';
 
 use Scalar::Util qw( weaken );
 
 =head1 NAME
 
-C<Tangence::Compiler::Event> - structure representing one C<Tangence> event
+C<Tangence::Meta::Event> - structure representing one C<Tangence> event
 
 =head1 DESCRIPTION
 
 This data structure object stores information about one L<Tangence> class
-event, as parsed by L<Tangence::Compiler::Parser>. Once constructed, such
-objects are immutable.
+event. Once constructed, such objects are immutable.
 
 =cut
 
@@ -28,13 +27,13 @@ objects are immutable.
 
 =cut
 
-=head2 $event = Tangence::Compiler::Event->new( %args )
+=head2 $event = Tangence::Meta::Event->new( %args )
 
 Returns a new instance initialised by the given arguments.
 
 =over 8
 
-=item class => Tangence::Compiler::Class
+=item class => Tangence::Meta::Class
 
 Reference to the containing class
 
@@ -45,7 +44,7 @@ Name of the event
 =item argtypes => ARRAY
 
 Optional ARRAY reference containing arguments as
-L<Tangence::Compiler::Argument> references.
+L<Tangence::Meta::Argument> references.
 
 =back
 
@@ -91,7 +90,7 @@ sub name
 
 =head2 @arguments = $event->arguments
 
-Return the arguments in a list of L<Tangence::Compiler::Argument> references.
+Return the arguments in a list of L<Tangence::Meta::Argument> references.
 
 =cut
 

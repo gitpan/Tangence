@@ -10,7 +10,7 @@ use warnings;
 
 use base qw( Tangence::Stream );
 
-our $VERSION = '0.08';
+our $VERSION = '0.09';
 
 use Carp;
 
@@ -18,6 +18,16 @@ use Scalar::Util qw( weaken );
 
 use Tangence::Constants;
 use Tangence::Server::Context;
+
+BEGIN {
+   if( eval { require Sub::Name } ) {
+      Sub::Name->import(qw( subname ));
+   }
+   else {
+      # Emulate it by just returning the CODEref and ignoring setting the name
+      *subname = sub { $_[1] };
+   }
+}
 
 =head1 NAME
 
@@ -164,7 +174,7 @@ sub handle_request_SUBSCRIBE
    weaken( my $weakself = $self );
 
    my $id = $object->subscribe_event( $event,
-      sub {
+      subname "__SUBSCRIBE($event)__" => sub {
          $weakself or return;
          my $object = shift;
 
@@ -364,7 +374,7 @@ sub _install_watch
    my %callbacks;
    foreach my $name ( @{ CHANGETYPES->{$dim} } ) {
       my $how = $change_values{$name};
-      $callbacks{$name} = sub {
+      $callbacks{$name} = subname "__WATCH($prop:$name)__" => sub {
          $weakself or return;
          my $object = shift;
 

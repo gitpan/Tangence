@@ -1,216 +1,247 @@
 #  You may distribute under the terms of either the GNU General Public License
 #  or the Artistic License (the same terms as Perl itself)
 #
-#  (C) Paul Evans, 2010-2011 -- leonerd@leonerd.org.uk
+#  (C) Paul Evans, 2011 -- leonerd@leonerd.org.uk
 
 package Tangence::Meta::Class;
 
 use strict;
 use warnings;
-use base qw( Tangence::Compiler::Class );
-
-use Tangence::Constants;
-
-use Tangence::Compiler::Method;
-use Tangence::Compiler::Event;
-use Tangence::Compiler::Argument;
-
-use Tangence::Meta::Property;
 
 use Carp;
 
-BEGIN {
-   if( eval { require Sub::Name } ) {
-      Sub::Name->import(qw( subname ));
-   }
-   else {
-      # Emulate it by just returning the CODEref and ignoring setting the name
-      *subname = sub { $_[1] };
-   }
-}
+our $VERSION = '0.09';
 
-our $VERSION = '0.08';
+=head1 NAME
 
-our %metas; # cache one per class, keyed by _Tangence_ class name
+C<Tangence::Meta::Class> - structure representing one C<Tangence> class
 
-# It would be really useful to put this in List::Utils or somesuch
-sub pairmap(&@)
-{
-   my $code = shift;
-   return map { $code->( local $a = shift, local $b = shift ) } 0 .. @_/2-1;
-}
+=head1 DESCRIPTION
+
+This data structure object stores information about one L<Tangence> class.
+Once constructed and defined, such objects are immutable.
+
+=cut
+
+=head1 CONSTRUCTOR
+
+=cut
+
+=head2 $class = Tangence::Meta::Class->new( name => $name )
+
+Returns a new instance representing the given name.
+
+=cut
 
 sub new
 {
    my $class = shift;
    my %args = @_;
-   my $name = $args{name};
-
-   return $metas{$name} ||= $class->SUPER::new( @_ );
+   my $self = bless { name => delete $args{name} }, $class;
+   return $self;
 }
 
-sub declare
-{
-   my $class = shift;
-   my ( $perlname, %args ) = @_;
+=head2 $class->define( %args )
 
-   ( my $name = $perlname ) =~ s{::}{.}g;
+Provides a definition for the class.
 
-   my $self;
-   if( exists $metas{$name} ) {
-      $self = $metas{$name};
-      local $metas{$name};
+=over 8
 
-      my $newself = $class->new( name => $name );
+=item methods => HASH
 
-      %$self = %$newself;
-   }
-   else {
-      $self = $class->new( name => $name );
-   }
+=item events => HASH
 
-   my %methods;
-   foreach ( keys %{ $args{methods} } ) {
-      $methods{$_} = Tangence::Compiler::Method->new(
-         name => $_,
-         %{ $args{methods}{$_} },
-         arguments => [ map {
-            Tangence::Compiler::Argument->new( name => $_->[0], type => $_->[1] )
-         } @{ $args{methods}{$_}{args} } ],
-      );
-   }
+=item properties => HASH
 
-   my %events;
-   foreach ( keys %{ $args{events} } ) {
-      $events{$_} = Tangence::Compiler::Event->new(
-         name => $_,
-         %{ $args{events}{$_} },
-         arguments => [ map {
-            Tangence::Compiler::Argument->new( name => $_->[0], type => $_->[1] )
-         } @{ $args{events}{$_}{args} } ],
-      );
-   }
+Optional HASH references containing metadata about methods, events and
+properties, as instances of L<Tangence::Meta::Method>,
+L<Tangence::Meta::Event> or L<Tangence::Meta::Property>.
 
-   my %properties;
-   foreach ( keys %{ $args{props} } ) {
-      $properties{$_} = Tangence::Meta::Property->new(
-         name => $_,
-         %{ $args{props}{$_} },
-         dimension => $args{props}{$_}{dim} || DIM_SCALAR,
-      );
-   }
+=item superclasses => ARRAY
 
-   $self->define(
-      methods    => \%methods,
-      events     => \%events,
-      properties => \%properties,
-   );
-}
+Optional ARRAY reference containing superclasses as
+C<Tangence::Meta::Class> references.
+
+=back
+
+=cut
 
 sub define
 {
    my $self = shift;
-   $self->SUPER::define( @_ );
+   my %args = @_;
 
-   my $class = $self->perlname;
+   $self->defined and croak "Cannot define ".$self->name." twice";
 
-   my %subs;
-
-   foreach my $prop ( values %{ $self->direct_properties } ) {
-      $prop->build_subs( \%subs );
-   }
-
-   no strict 'refs';
-   foreach my $name ( keys %subs ) {
-      next if defined &{"${class}::${name}"};
-      *{"${class}::${name}"} = subname "${class}::${name}" => $subs{$name};
-   }
+   $args{superclasses} ||= [];
+   $args{methods}      ||= {};
+   $args{events}       ||= {};
+   $args{properties}   ||= {};
+   $self->{$_} = $args{$_} for keys %args;
 }
 
-sub for_perlname
-{
-   my $class = shift;
-   my ( $perlname ) = @_;
+=head1 ACCESSORS
 
-   ( my $name = $perlname ) =~ s{::}{.}g;
-   return $metas{$name} or croak "Unknown Tangence::Meta::Class for '$perlname'";
-}
+=cut
 
-sub perlname
+=head2 $defined = $class->defined
+
+Returns true if a definintion for the class has been provided using C<define>.
+
+=cut
+
+sub defined
 {
    my $self = shift;
-   ( my $perlname = $self->name ) =~ s{\.}{::}g; # s///rg in 5.14
-   return $perlname;
+   return exists $self->{superclasses};
 }
+
+=head2 $name = $class->name
+
+Returns the name of the class
+
+=cut
+
+sub name
+{
+   my $self = shift;
+   return $self->{name};
+}
+
+=head2 @superclasses = $class->direct_superclasses
+
+Return the direct superclasses in a list of C<Tangence::Meta::Class>
+references.
+
+=cut
+
+sub direct_superclasses
+{
+   my $self = shift;
+   $self->defined or croak $self->name . " is not yet defined";
+   return @{ $self->{superclasses} };
+}
+
+=head2 $methods = $class->direct_methods
+
+Return the methods that this class directly defines (rather than inheriting
+from superclasses) as a HASH reference mapping names to
+L<Tangence::Meta::Method> instances.
+
+=cut
+
+sub direct_methods
+{
+   my $self = shift;
+   $self->defined or croak $self->name . " is not yet defined";
+   return $self->{methods};
+}
+
+=head2 $events = $class->direct_events
+
+Return the events that this class directly defines (rather than inheriting
+from superclasses) as a HASH reference mapping names to
+L<Tangence::Meta::Event> instances.
+
+=cut
+
+sub direct_events
+{
+   my $self = shift;
+   $self->defined or croak $self->name . " is not yet defined";
+   return $self->{events};
+}
+
+=head2 $properties = $class->direct_properties
+
+Return the properties that this class directly defines (rather than inheriting
+from superclasses) as a HASH reference mapping names to
+L<Tangence::Meta::Property> instances.
+
+=cut
+
+sub direct_properties
+{
+   my $self = shift;
+   $self->defined or croak $self->name . " is not yet defined";
+   return $self->{properties};
+}
+
+=head1 AGGREGATE ACCESSORS
+
+The following accessors inspect the full inheritance tree of this class and
+all its superclasses
+
+=cut
+
+=head2 @superclasses = $class->superclasses
+
+Return all the superclasses in a list of unique C<Tangence::Meta::Class>
+references.
+
+=cut
 
 sub superclasses
 {
    my $self = shift;
+   # This algorithm doesn't have to be particularly good, C3 or whatever.
+   # We're not really forming a search order, mearly uniq'ifying
+   my %seen;
+   return grep { !$seen{$_}++ } map { $_, $_->superclasses } $self->direct_superclasses;
+}
 
-   my @supers = $self->SUPER::superclasses;
+=head2 $methods = $class->methods
 
-   if( !@supers and $self->perlname ne "Tangence::Object" ) {
-      @supers = Tangence::Meta::Class->for_perlname( "Tangence::Object" );
+Return all the methods available to this class as a HASH reference mapping
+names to L<Tangence::Meta::Method> instances.
+
+=cut
+
+sub methods
+{
+   my $self = shift;
+   my %methods;
+   foreach ( $self, $self->superclasses ) {
+      my $m = $_->direct_methods;
+      $methods{$_} ||= $m->{$_} for keys %$m;
    }
-
-   return @supers;
+   return \%methods;
 }
 
-sub method
+=head2 $events = $class->events
+
+Return all the events available to this class as a HASH reference mapping
+names to L<Tangence::Meta::Event> instances.
+
+=cut
+
+sub events
 {
    my $self = shift;
-   my ( $name ) = @_;
-   return $self->methods->{$name};
+   my %events;
+   foreach ( $self, $self->superclasses ) {
+      my $e = $_->direct_events;
+      $events{$_} ||= $e->{$_} for keys %$e;
+   }
+   return \%events;
 }
 
-sub event
+=head2 $properties = $class->properties
+
+Return all the properties available to this class as a HASH reference mapping
+names to L<Tangence::Meta::Property> instances.
+
+=cut
+
+sub properties
 {
    my $self = shift;
-   my ( $name ) = @_;
-   return $self->events->{$name};
-}
-
-sub property
-{
-   my $self = shift;
-   my ( $name ) = @_;
-   return $self->properties->{$name};
-}
-
-sub smashkeys
-{
-   my $self = shift;
-   my %smash;
-   $smash{$_->name} = 1 for grep { $_->smashed } values %{ $self->properties };
-   return \%smash;
-}
-
-sub introspect
-{
-   my $self = shift;
-
-   my $ret = {
-      methods    => { 
-         pairmap {
-            $a => { args => [ $b->argtypes ], ret => $b->ret || "" }
-         } %{ $self->methods }
-      },
-      events     => {
-         pairmap {
-            $a => { args => [ $b->argtypes ] }
-         } %{ $self->events }
-      },
-      properties => {
-         pairmap {
-            $a => { type => $b->type, dim => $b->dimension, $b->smashed ? ( smash => 1 ) : () }
-         } %{ $self->properties }
-      },
-      isa        => [
-         grep { $_ ne "Tangence::Object" } $self->perlname, map { $_->perlname } $self->superclasses
-      ],
-   };
-
-   return $ret;
+   my %properties;
+   foreach ( $self, $self->superclasses ) {
+      my $p = $_->direct_properties;
+      $properties{$_} ||= $p->{$_} for keys %$p;
+   }
+   return \%properties;
 }
 
 =head1 AUTHOR
