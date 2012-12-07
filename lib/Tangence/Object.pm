@@ -1,14 +1,14 @@
 #  You may distribute under the terms of either the GNU General Public License
 #  or the Artistic License (the same terms as Perl itself)
 #
-#  (C) Paul Evans, 2010-2011 -- leonerd@leonerd.org.uk
+#  (C) Paul Evans, 2010-2012 -- leonerd@leonerd.org.uk
 
 package Tangence::Object;
 
 use strict;
 use warnings;
 
-our $VERSION = '0.10';
+our $VERSION = '0.11';
 
 use Carp;
 
@@ -615,11 +615,11 @@ sub _generate_message_UPDATE_objset
       $message->pack_typed( "list($type)", $value );
    }
    elsif( $how == CHANGE_ADD ) {
-      my ( $value ) = @_;
+      my ( $value ) = @args;
       $message->pack_typed( $type, $value );
    }
    elsif( $how == CHANGE_DEL ) {
-      my ( $id ) = @_;
+      my ( $id ) = @args;
       $message->pack_int( $id );
    }
    else {

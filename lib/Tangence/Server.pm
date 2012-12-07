@@ -1,7 +1,7 @@
 #  You may distribute under the terms of either the GNU General Public License
 #  or the Artistic License (the same terms as Perl itself)
 #
-#  (C) Paul Evans, 2011 -- leonerd@leonerd.org.uk
+#  (C) Paul Evans, 2011-2012 -- leonerd@leonerd.org.uk
 
 package Tangence::Server;
 
@@ -10,7 +10,7 @@ use warnings;
 
 use base qw( Tangence::Stream );
 
-our $VERSION = '0.10';
+our $VERSION = '0.11';
 
 use Carp;
 
@@ -289,8 +289,8 @@ sub handle_request_WATCH
          request     => $message,
          on_response => sub { "IGNORE" },
       );
-   }
-   # ignore $@
+   };
+   warn "$@ during initial property fetch" if $@;
 }
 
 sub handle_request_UNWATCH

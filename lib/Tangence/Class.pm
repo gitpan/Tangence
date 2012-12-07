@@ -1,7 +1,7 @@
 #  You may distribute under the terms of either the GNU General Public License
 #  or the Artistic License (the same terms as Perl itself)
 #
-#  (C) Paul Evans, 2010-2011 -- leonerd@leonerd.org.uk
+#  (C) Paul Evans, 2010-2012 -- leonerd@leonerd.org.uk
 
 package Tangence::Class;
 
@@ -28,7 +28,7 @@ BEGIN {
    }
 }
 
-our $VERSION = '0.10';
+our $VERSION = '0.11';
 
 our %metas; # cache one per class, keyed by _Tangence_ class name
 
@@ -357,7 +357,12 @@ sub _accessor_for_objset
    my $prop = shift;
    my ( $subs, $pname ) = @_;
 
-   # Different set method
+   # Different get and set methods
+   $subs->{"get_prop_$pname"} = sub {
+      my $self = shift;
+      return [ values %{ $self->{properties}->{$pname}->[0] } ];
+   };
+
    $subs->{"set_prop_$pname"} = sub {
       my $self = shift;
       my ( $newval ) = @_;
