@@ -1,14 +1,14 @@
 #  You may distribute under the terms of either the GNU General Public License
 #  or the Artistic License (the same terms as Perl itself)
 #
-#  (C) Paul Evans, 2011 -- leonerd@leonerd.org.uk
+#  (C) Paul Evans, 2011-2012 -- leonerd@leonerd.org.uk
 
 package Tangence::Meta::Method;
 
 use strict;
 use warnings;
 
-our $VERSION = '0.11';
+our $VERSION = '0.12';
 
 use Scalar::Util qw( weaken );
 
@@ -41,14 +41,15 @@ Reference to the containing class
 
 Name of the method
 
-=item args => ARRAY
+=item arguments => ARRAY
 
 Optional ARRAY reference containing arguments as
 L<Tangence::Meta::Argument> references.
 
 =item ret => STRING
 
-Optional string giving the return value type as a string.
+Optional string giving the return value type as a L<Tangence::Meta::Type>
+reference
 
 =back
 
@@ -106,7 +107,7 @@ sub arguments
 
 =head2 @argtypes = $method->argtypes
 
-Return the argument types in a list of strings.
+Return the argument types in a list of L<Tangence::Meta::Type> references.
 
 =cut
 
@@ -118,8 +119,8 @@ sub argtypes
 
 =head2 $ret = $method->ret
 
-Returns the return type as a string, or C<undef> if the method does not return
-a value.
+Returns the return type as a L<Tangence::Meta::Type> reference or C<undef> if
+the method does not return a value.
 
 =cut
 

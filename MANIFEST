@@ -15,6 +15,7 @@ lib/Tangence/Meta/Class.pm
 lib/Tangence/Meta/Event.pm
 lib/Tangence/Meta/Method.pm
 lib/Tangence/Meta/Property.pm
+lib/Tangence/Meta/Type.pm
 lib/Tangence/Object.pm
 lib/Tangence/ObjectProxy.pm
 lib/Tangence/Registry.pm

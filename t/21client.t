@@ -2,7 +2,7 @@
 
 use strict;
 
-use Test::More tests => 37;
+use Test::More tests => 38;
 use Test::Fatal qw( dies_ok );
 use Test::HexString;
 use Test::Memory::Cycle;
@@ -12,11 +12,18 @@ use Tangence::Registry;
 
 use t::Conversation;
 
+use constant TYPE_INT => Tangence::Meta::Type->new( "int" );
+use constant TYPE_STR => Tangence::Meta::Type->new( "str" );
+
 $Tangence::Message::SORT_HASH_KEYS = 1;
 
 my $client = TestClient->new();
 
-is_hexstr( $client->recv_message, $C2S{GETROOT} . $C2S{GETREGISTRY}, 'client stream initially contains MSG_GETROOT and MSG_GETREGISTRY' );
+is_hexstr( $client->recv_message, $C2S{INIT}, 'client stream initially contains MSG_INIT' );
+
+$client->send_message( $S2C{INITED} );
+
+is_hexstr( $client->recv_message, $C2S{GETROOT} . $C2S{GETREGISTRY}, 'client stream contains MSG_GETROOT and MSG_GETREGISTRY' );
 
 $client->send_message( $S2C{GETROOT} );
 $client->send_message( $S2C{GETREGISTRY} );
@@ -41,11 +48,24 @@ isa_ok( $result[0], "Tangence::ObjectProxy", 'result contains an ObjectProxy' );
 
 my $ballproxy = $result[0];
 
-ok( $ballproxy->proxy_isa( "t::Ball" ), 'proxy for isa t::Ball' );
+is_deeply( $ballproxy->introspect,
+   {
+      methods => {
+         bounce  => { args => [ TYPE_STR ], ret => TYPE_STR },
+      },
+      events  => {
+         bounced => { args => [ TYPE_STR ], },
+         destroy => { args => [] },
+      },
+      properties => {
+         colour  => { type => TYPE_STR, dim => DIM_SCALAR },
+         size    => { type => TYPE_INT, dim => DIM_SCALAR, smash => 1 },
+      },
+      isa => [qw( t::Ball t::Colourable )],
+   },
+   '$ballproxy->introspect' );
 
-is_deeply( $ballproxy->can_method( "bounce" ),
-           { args => [qw( str )], ret => "str" },
-           'proxy can_method bounce' );
+ok( $ballproxy->proxy_isa( "t::Ball" ), 'proxy for isa t::Ball' );
 
 my $result;
 
@@ -241,7 +261,7 @@ sub new
    my $self = bless { written => "" }, shift;
    $self->identity( "testscript" );
    $self->on_error( sub { die "Test failed early - $_[0]" } );
-   $self->tangence_connected;
+   $self->tangence_connected( do_init => 1 );
    return $self;
 }
 

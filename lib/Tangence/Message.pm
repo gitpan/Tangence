@@ -1,7 +1,7 @@
 #  You may distribute under the terms of either the GNU General Public License
 #  or the Artistic License (the same terms as Perl itself)
 #
-#  (C) Paul Evans, 2010-2011 -- leonerd@leonerd.org.uk
+#  (C) Paul Evans, 2010-2012 -- leonerd@leonerd.org.uk
 
 package Tangence::Message;
 
@@ -13,11 +13,13 @@ use warnings;
 # restriction could be listed.
 use 5.010; 
 
-our $VERSION = '0.11';
+our $VERSION = '0.12';
 
 use Carp;
 
 use Tangence::Constants;
+
+use Tangence::Meta::Type;
 
 use Encode qw( encode_utf8 decode_utf8 );
 use Scalar::Util qw( weaken );
@@ -26,6 +28,20 @@ use Scalar::Util qw( weaken );
 # that will assert on the serialisation bytes, we do. Setting this to some
 # true value will sort keys first
 our $SORT_HASH_KEYS = 0;
+
+use constant TYPE_ANY      => Tangence::Meta::Type->new( "any" );
+use constant TYPE_INT      => Tangence::Meta::Type->new( "int" );
+use constant TYPE_STR      => Tangence::Meta::Type->new( "str" );
+use constant TYPE_LIST_ANY => Tangence::Meta::Type->new( list => TYPE_ANY );
+use constant TYPE_LIST_STR => Tangence::Meta::Type->new( list => TYPE_STR );
+use constant TYPE_DICT_ANY => Tangence::Meta::Type->new( dict => TYPE_ANY );
+
+# It would be really useful to put this in List::Utils or somesuch
+sub pairmap(&@)
+{
+   my $code = shift;
+   return map { $code->( local $a = shift, local $b = shift ) } 0 .. @_/2-1;
+}
 
 sub new
 {
@@ -92,70 +108,39 @@ sub _unpack_leader
 {
    my $self = shift;
 
-   my ( $typenum ) = unpack( "C", $self->{record} );
-   substr( $self->{record}, 0, 1, "" );
-
-   my $type = $typenum >> 5;
-   my $num  = $typenum & 0x1f;
-
-   if( $num == 0x1f ) {
-      ( $num ) = unpack( "C", $self->{record} );
-
-      if( $num < 0x80 ) {
-         substr( $self->{record}, 0, 1, "" );
-      }
-      else {
-         ( $num ) = unpack( "N", $self->{record} );
-         $num &= 0x7fffffff;
-         substr( $self->{record}, 0, 4, "" );
-      }
-   }
-
-   return ( $type, $num );
-}
-
-sub _unpack_meta
-{
-   my $self = shift;
-   my $num = shift;
-
-   my $stream = $self->{stream};
-
-   if( $num == DATAMETA_CONSTRUCT ) {
-      my ( $id, $class ) = unpack( "NZ*", $self->{record} ); substr( $self->{record}, 0, 5 + length $class, "" );
-      my $smasharr = $self->unpack_typed( 'list(any)' );
-
-      my $smashkeys = $stream->peer_hasclass->{$class}->[0];
-
-      my $smashdata;
-      $smashdata->{$smashkeys->[$_]} = $smasharr->[$_] for 0 .. $#$smasharr;
-
-      $stream->make_proxy( $id, $class, $smashdata );
-   }
-   elsif( $num == DATAMETA_CLASS ) {
-      my ( $class ) = unpack( "Z*", $self->{record} ); substr( $self->{record}, 0, 1 + length $class, "" );
-      my $schema = $self->unpack_typed( 'dict(any)' );
-
-      $stream->schemata->{$class} = $schema;
-
-      my $smashkeys = $self->unpack_typed( 'list(str)' );
-      $stream->peer_hasclass->{$class} = [ $smashkeys ];
-   }
-   else {
-      die sprintf("TODO: Data stream meta-operation 0x%02x", $num);
-   }
-}
-
-sub _unpack_leader_dometa
-{
-   my $self = shift;
-
    while(1) {
       length $self->{record} or croak "Ran out of bytes before finding a leader";
-      my ( $type, $num ) = $self->_unpack_leader();
+
+      my ( $typenum ) = unpack( "C", $self->{record} );
+      substr( $self->{record}, 0, 1, "" );
+
+      my $type = $typenum >> 5;
+      my $num  = $typenum & 0x1f;
+
+      if( $num == 0x1f ) {
+         ( $num ) = unpack( "C", $self->{record} );
+
+         if( $num < 0x80 ) {
+            substr( $self->{record}, 0, 1, "" );
+         }
+         else {
+            ( $num ) = unpack( "N", $self->{record} );
+            $num &= 0x7fffffff;
+            substr( $self->{record}, 0, 4, "" );
+         }
+      }
+
       return $type, $num unless $type == DATA_META;
 
-      $self->_unpack_meta( $num );
+      if( $num == DATAMETA_CONSTRUCT ) {
+         $self->unpackmeta_construct;
+      }
+      elsif( $num == DATAMETA_CLASS ) {
+         $self->unpackmeta_class;
+      }
+      else {
+         die sprintf("TODO: Data stream meta-operation 0x%02x", $num);
+      }
    }
 }
 
@@ -170,7 +155,7 @@ sub pack_bool
 sub unpack_bool
 {
    my $self = shift;
-   my ( $type, $num ) = @_ ? @_ : $self->_unpack_leader_dometa();
+   my ( $type, $num ) = @_ ? @_ : $self->_unpack_leader();
 
    $type == DATA_NUMBER or croak "Expected to unpack a number(bool) but did not find one";
    $num == DATANUM_BOOLFALSE and return 0;
@@ -233,7 +218,7 @@ sub pack_int
 sub unpack_int
 {
    my $self = shift;
-   my ( $type, $num ) = @_ ? @_ : $self->_unpack_leader_dometa();
+   my ( $type, $num ) = @_ ? @_ : $self->_unpack_leader();
 
    $type == DATA_NUMBER or croak "Expected to unpack a number but did not find one";
    exists $pack_int_format{$num} or croak "Expected an integer subtype but got $num";
@@ -258,7 +243,7 @@ sub pack_str
 sub unpack_str
 {
    my $self = shift;
-   my ( $type, $num ) = @_ ? @_ : $self->_unpack_leader_dometa();
+   my ( $type, $num ) = @_ ? @_ : $self->_unpack_leader();
 
    $type == DATA_STRING or croak "Expected to unpack a string but did not find one";
    length $self->{record} >= $num or croak "Can't pull $num bytes for string as there aren't enough";
@@ -282,54 +267,10 @@ sub pack_obj
 
       $d->{destroyed} and croak "Cannot pack destroyed object $d";
 
-      if( !$stream->peer_hasobj->{$id} ) {
-         my $class = ref $d;
-
-         my $smashkeys;
-
-         if( !$stream->peer_hasclass->{$class} ) {
-            my $schema = $class->introspect;
-
-            $self->_pack_leader( DATA_META, DATAMETA_CLASS );
-            $self->{record} .= pack( "Z*", $class );
-            $self->pack_typed( 'dict(any)', $schema );
-
-            $smashkeys = [ keys %{ $class->smashkeys } ];
-
-            @$smashkeys = sort @$smashkeys if $SORT_HASH_KEYS;
-
-            $self->pack_typed( 'list(str)', $smashkeys );
-
-            $stream->peer_hasclass->{$class} = [ $smashkeys ];
-         }
-         else {
-            $smashkeys = $stream->peer_hasclass->{$class}->[0];
-         }
-
-         $self->_pack_leader( DATA_META, DATAMETA_CONSTRUCT );
-         $self->{record} .= pack( "NZ*", $id, $class );
-
-         my $smasharr = [];
-
-         if( @$smashkeys ) {
-            my $smashdata = $d->smash( $smashkeys );
-            $smasharr = [ map { $smashdata->{$_} } @$smashkeys ];
-
-            for my $prop ( @$smashkeys ) {
-               $stream->_install_watch( $d, $prop );
-            }
-         }
-
-         $self->pack_typed( 'list(any)', $smasharr );
-
-         weaken( my $weakstream = $stream );
-         $stream->peer_hasobj->{$id} = $d->subscribe_event( 
-            destroy => sub { $weakstream->object_destroyed( @_ ) if $weakstream },
-         );
-      }
+      $self->packmeta_construct( $d ) unless $stream->peer_hasobj->{$id};
 
       $self->_pack_leader( DATA_OBJECT, 4 );
-      $self->{record} .= pack( "N", $d->id );
+      $self->{record} .= pack( "N", $id );
    }
    elsif( eval { $d->isa( "Tangence::ObjectProxy" ) } ) {
       $self->_pack_leader( DATA_OBJECT, 4 );
@@ -344,7 +285,7 @@ sub pack_obj
 sub unpack_obj
 {
    my $self = shift;
-   my ( $type, $num ) = @_ ? @_ : $self->_unpack_leader_dometa();
+   my ( $type, $num ) = @_ ? @_ : $self->_unpack_leader();
 
    my $stream = $self->{stream};
 
@@ -356,6 +297,123 @@ sub unpack_obj
    else {
       croak "Unexpected number of bits to encode an OBJECT";
    }
+}
+
+sub packmeta_construct
+{
+   my $self = shift;
+   my ( $obj ) = @_;
+
+   my $stream = $self->{stream};
+
+   my $class = $obj->_meta;
+   my $id    = $obj->id;
+
+   $self->packmeta_class( $class ) unless $stream->peer_hasclass->{$class->perlname};
+
+   my $smashkeys = $class->smashkeys;
+
+   $self->_pack_leader( DATA_META, DATAMETA_CONSTRUCT );
+   $self->{record} .= pack( "NZ*", $id, $class->perlname );
+
+   my $smasharr = [];
+
+   if( @$smashkeys ) {
+      my $smashdata = $obj->smash( $smashkeys );
+      $smasharr = [ map { $smashdata->{$_} } @$smashkeys ];
+
+      for my $prop ( @$smashkeys ) {
+         $stream->_install_watch( $obj, $prop );
+      }
+   }
+
+   $self->pack_typed( TYPE_LIST_ANY, $smasharr );
+
+   weaken( my $weakstream = $stream );
+   $stream->peer_hasobj->{$id} = $obj->subscribe_event( 
+      destroy => sub { $weakstream->object_destroyed( @_ ) if $weakstream },
+   );
+}
+
+sub unpackmeta_construct
+{
+   my $self = shift;
+
+   my $stream = $self->{stream};
+
+   my ( $id, $class ) = unpack( "NZ*", $self->{record} ); substr( $self->{record}, 0, 5 + length $class, "" );
+   my $smasharr = $self->unpack_typed( TYPE_LIST_ANY );
+
+   my $smashkeys = $stream->peer_hasclass->{$class}->[1];
+
+   my $smashdata;
+   $smashdata->{$smashkeys->[$_]} = $smasharr->[$_] for 0 .. $#$smasharr;
+
+   $stream->make_proxy( $id, $class, $smashdata );
+}
+
+sub packmeta_class
+{
+   my $self = shift;
+   my ( $class ) = @_;
+
+   my $stream = $self->{stream};
+
+   $self->_pack_leader( DATA_META, DATAMETA_CLASS );
+
+   my $schema = {
+      methods    => { 
+         pairmap {
+            $a => { args => [ map { $_->sig } $b->argtypes ], ret => ( $b->ret ? $b->ret->sig : "" ) }
+         } %{ $class->methods }
+      },
+      events     => {
+         pairmap {
+            $a => { args => [ map { $_->sig } $b->argtypes ] }
+         } %{ $class->events }
+      },
+      properties => {
+         pairmap {
+            $a => { type => $b->type->sig, dim => $b->dimension, $b->smashed ? ( smash => 1 ) : () }
+         } %{ $class->properties }
+      },
+      isa        => [
+         grep { $_ ne "Tangence::Object" } $class->perlname, map { $_->perlname } $class->superclasses
+      ],
+   };
+
+   my $smashkeys = $class->smashkeys;
+
+   # TODO: This ought to be totally redone sometime
+   $self->{record} .= pack( "Z*", $class->perlname );
+   $self->pack_typed( TYPE_DICT_ANY, $schema );
+   $self->pack_typed( TYPE_LIST_STR, $smashkeys );
+
+   $stream->peer_hasclass->{$class->perlname} = [ $schema, $smashkeys ];
+}
+
+sub unpackmeta_class
+{
+   my $self = shift;
+
+   my $stream = $self->{stream};
+
+   my ( $class ) = unpack( "Z*", $self->{record} ); substr( $self->{record}, 0, 1 + length $class, "" );
+   my $schema    = $self->unpack_typed( TYPE_DICT_ANY );
+   my $smashkeys = $self->unpack_typed( TYPE_LIST_STR );
+
+   foreach my $mdef ( values %{ $schema->{methods} } ) {
+      $_ = Tangence::Meta::Type->new_from_sig( $_ ) for @{ $mdef->{args} };
+      length and $_ = Tangence::Meta::Type->new_from_sig( $_) for $mdef->{ret};
+   }
+   foreach my $edef ( values %{ $schema->{events} } ) {
+      $_ = Tangence::Meta::Type->new_from_sig( $_ ) for @{ $edef->{args} };
+   }
+   foreach my $pdef ( values %{ $schema->{properties} } ) {
+      $_ = Tangence::Meta::Type->new_from_sig( $_ ) for $pdef->{type};
+   }
+
+   $stream->peer_hasclass->{$class} = [ $schema, $smashkeys ];
 }
 
 sub pack_any
@@ -394,7 +452,7 @@ sub unpack_any
 {
    my $self = shift;
 
-   my ( $type, $num ) = $self->_unpack_leader_dometa();
+   my ( $type, $num ) = $self->_unpack_leader();
 
    if( $type == DATA_NUMBER ) {
       return $self->unpack_int( $type, $num );
@@ -428,25 +486,32 @@ sub unpack_any
 sub pack_typed
 {
    my $self = shift;
-   my ( $sig, $d ) = @_;
+   my ( $type, $d ) = @_;
 
-   if( my $code = $self->can( "pack_$sig" ) ) {
-      $code->( $self, $d );
+   if( $type->aggregate eq "prim" ) {
+      my $sig = $type->sig;
+
+      if( my $code = $self->can( "pack_$sig" ) ) {
+         $code->( $self, $d );
+      }
+      elsif( exists $int_sigs{$sig} ) {
+         ref $d and croak "$d is not a number";
+         my $subtype = $int_sigs{$sig};
+         $self->_pack_leader( DATA_NUMBER, $subtype );
+         $self->{record} .= pack( $pack_int_format{$subtype}[0], $d );
+      }
+      else {
+         croak "Unrecognised type signature $sig";
+      }
    }
-   elsif( exists $int_sigs{$sig} ) {
-      ref $d and croak "$d is not a number";
-      my $subtype = $int_sigs{$sig};
-      $self->_pack_leader( DATA_NUMBER, $subtype );
-      $self->{record} .= pack( $pack_int_format{$subtype}[0], $d );
-   }
-   elsif( $sig =~ m/^list\((.*)\)$/ ) {
-      my $subtype = $1;
+   elsif( $type->aggregate eq "list" ) {
+      my $subtype = $type->member_type;
       ref $d eq "ARRAY" or croak "Cannot pack a list from non-ARRAY reference";
       $self->_pack_leader( DATA_LIST, scalar @$d );
       $self->pack_typed( $subtype, $_ ) for @$d;
    }
-   elsif( $sig =~ m/^dict\((.*)\)$/ ) {
-      my $subtype = $1;
+   elsif( $type->aggregate eq "dict" ) {
+      my $subtype = $type->member_type;
       ref $d eq "HASH" or croak "Cannot pack a dict from non-HASH reference";
       my @keys = keys %$d;
       @keys = sort @keys if $SORT_HASH_KEYS;
@@ -454,7 +519,7 @@ sub pack_typed
       $self->{record} .= pack( "Z*", $_ ) and $self->pack_typed( $subtype, $d->{$_} ) for @keys;
    }
    else {
-      croak "Unrecognised type signature $sig";
+      croak "Unrecognised type aggregation ".$type->aggregate;
    }
 
    return $self;
@@ -463,23 +528,30 @@ sub pack_typed
 sub unpack_typed
 {
    my $self = shift;
-   my $sig = shift;
+   my $type = shift;
 
-   if( my $code = $self->can( "unpack_$sig" ) ) {
-      return $code->( $self );
-   }
-   elsif( exists $int_sigs{$sig} ) {
-      my ( $type, $num ) = $self->_unpack_leader_dometa();
+   if( $type->aggregate eq "prim" ) {
+      my $sig = $type->sig;
 
-      $type == DATA_NUMBER or croak "Expected to unpack a number but did not find one";
-      $num == $int_sigs{$sig} or croak "Expected subtype $int_sigs{$sig} but got $num";
-      my ( $n ) = unpack( $pack_int_format{$num}[0], $self->{record} );
-      substr( $self->{record}, 0, $pack_int_format{$num}[1] ) = "";
-      return $n;
+      if( my $code = $self->can( "unpack_$sig" ) ) {
+         return $code->( $self );
+      }
+      elsif( exists $int_sigs{$sig} ) {
+         my ( $type, $num ) = $self->_unpack_leader();
+
+         $type == DATA_NUMBER or croak "Expected to unpack a number but did not find one";
+         $num == $int_sigs{$sig} or croak "Expected subtype $int_sigs{$sig} but got $num";
+         my ( $n ) = unpack( $pack_int_format{$num}[0], $self->{record} );
+         substr( $self->{record}, 0, $pack_int_format{$num}[1] ) = "";
+         return $n;
+      }
+      else {
+         croak "Unrecognised type signature $sig";
+      }
    }
-   elsif( $sig =~ m/^list\((.*)\)$/ ) {
-      my $subtype = $1;
-      my ( $type, $num ) = $self->_unpack_leader_dometa();
+   elsif( $type->aggregate eq "list" ) {
+      my $subtype = $type->member_type;
+      my ( $type, $num ) = $self->_unpack_leader();
 
       $type == DATA_LIST or croak "Expected to unpack a list but did not find one";
       my @a;
@@ -488,9 +560,9 @@ sub unpack_typed
       }
       return \@a;
    }
-   elsif( $sig =~ m/^dict\((.*)\)$/ ) {
-      my $subtype = $1;
-      my ( $type, $num ) = $self->_unpack_leader_dometa();
+   elsif( $type->aggregate eq "dict" ) {
+      my $subtype = $type->member_type;
+      my ( $type, $num ) = $self->_unpack_leader();
 
       $type == DATA_DICT or croak "Expected to unpack a dict but did not find one";
       my %h;
@@ -501,33 +573,33 @@ sub unpack_typed
       return \%h;
    }
    else {
-      croak "Unrecognised type signature $sig";
+      croak "Unrecognised type aggregation ".$type->aggregate;
    }
 }
 
 sub pack_all_typed
 {
    my $self = shift;
-   my ( $sigs, @args ) = @_;
+   my ( $types, @args ) = @_;
 
-   $self->pack_typed( $_, shift @args ) for @$sigs;
+   $self->pack_typed( $_, shift @args ) for @$types;
    return $self;
 }
 
 sub unpack_all_typed
 {
    my $self = shift;
-   my ( $sigs ) = @_;
+   my ( $types ) = @_;
 
-   return map { $self->unpack_typed( $_ ) } @$sigs;
+   return map { $self->unpack_typed( $_ ) } @$types;
 }
 
 sub pack_all_sametype
 {
    my $self = shift;
-   my $sig = shift;
+   my $type = shift;
 
-   $self->pack_typed( $sig, $_ ) for @_;
+   $self->pack_typed( $type, $_ ) for @_;
 
    return $self;
 }
@@ -535,9 +607,9 @@ sub pack_all_sametype
 sub unpack_all_sametype
 {
    my $self = shift;
-   my ( $sig ) = @_;
+   my ( $type ) = @_;
    my @data;
-   push @data, $self->unpack_typed( $sig ) while length $self->{record};
+   push @data, $self->unpack_typed( $type ) while length $self->{record};
 
    return @data;
 }

@@ -8,11 +8,15 @@ package Tangence::Object;
 use strict;
 use warnings;
 
-our $VERSION = '0.11';
+our $VERSION = '0.12';
 
 use Carp;
 
 use Tangence::Constants;
+
+use Tangence::Meta::Type;
+
+use constant TYPE_U8 => Tangence::Meta::Type->new( "u8" );
 
 use Tangence::Class;
 
@@ -239,12 +243,6 @@ sub smashkeys
 {
    my $self = shift;
    return $self->_meta->smashkeys;
-}
-
-sub introspect
-{
-   my $self = shift;
-   return $self->_meta->introspect;
 }
 
 =head2 $obj->fire_event( $event, @args )
@@ -501,11 +499,15 @@ sub generate_message_UPDATE
    my $message = Tangence::Message->new( $conn, MSG_UPDATE )
       ->pack_int( $self->id )
       ->pack_str( $prop )
-      ->pack_typed( "u8", $how );
+      ->pack_typed( TYPE_U8, $how );
 
    my $dimname = DIMNAMES->[$dim];
-   if( my $code = $self->can( "_generate_message_UPDATE_$dimname" ) ) {
-      $code->( $self, $message, $how, $pdef->type, @args );
+   if( $how == CHANGE_SET ) {
+      my ( $value ) = @args;
+      $message->pack_typed( $pdef->overall_type, $value );
+   }
+   elsif( my $code = $self->can( "_generate_message_UPDATE_$dimname" ) ) {
+      $code->( $self, $message, $how, $pdef, @args );
    }
    else {
       croak "Unrecognised property dimension $dim for $prop";
@@ -517,30 +519,20 @@ sub generate_message_UPDATE
 sub _generate_message_UPDATE_scalar
 {
    my $self = shift;
-   my ( $message, $how, $type, @args ) = @_;
+   my ( $message, $how, $pdef, @args ) = @_;
 
-   if( $how == CHANGE_SET ) {
-      my ( $value ) = @args;
-      $message->pack_typed( $type, $value );
-   }
-   else {
-      croak "Change type $how is not valid for a scalar property";
-   }
+   croak "Change type $how is not valid for a scalar property";
 }
 
 sub _generate_message_UPDATE_hash
 {
    my $self = shift;
-   my ( $message, $how, $type, @args ) = @_;
+   my ( $message, $how, $pdef, @args ) = @_;
 
-   if( $how == CHANGE_SET ) {
-      my ( $value ) = @args;
-      $message->pack_typed( "dict($type)", $value );
-   }
-   elsif( $how == CHANGE_ADD ) {
+   if( $how == CHANGE_ADD ) {
       my ( $key, $value ) = @args;
       $message->pack_str( $key );
-      $message->pack_typed( $type, $value );
+      $message->pack_typed( $pdef->type, $value );
    }
    elsif( $how == CHANGE_DEL ) {
       my ( $key ) = @args;
@@ -554,14 +546,10 @@ sub _generate_message_UPDATE_hash
 sub _generate_message_UPDATE_queue
 {
    my $self = shift;
-   my ( $message, $how, $type, @args ) = @_;
+   my ( $message, $how, $pdef, @args ) = @_;
 
-   if( $how == CHANGE_SET ) {
-      my ( $value ) = @args;
-      $message->pack_typed( "list($type)", $value );
-   }
-   elsif( $how == CHANGE_PUSH ) {
-      $message->pack_all_sametype( $type, @args );
+   if( $how == CHANGE_PUSH ) {
+      $message->pack_all_sametype( $pdef->type, @args );
    }
    elsif( $how == CHANGE_SHIFT ) {
       my ( $count ) = @args;
@@ -575,14 +563,10 @@ sub _generate_message_UPDATE_queue
 sub _generate_message_UPDATE_array
 {
    my $self = shift;
-   my ( $message, $how, $type, @args ) = @_;
+   my ( $message, $how, $pdef, @args ) = @_;
 
-   if( $how == CHANGE_SET ) {
-      my ( $value ) = @args;
-      $message->pack_typed( "list($type)", $value );
-   }
-   elsif( $how == CHANGE_PUSH ) {
-      $message->pack_all_sametype( $type, @args );
+   if( $how == CHANGE_PUSH ) {
+      $message->pack_all_sametype( $pdef->type, @args );
    }
    elsif( $how == CHANGE_SHIFT ) {
       my ( $count ) = @args;
@@ -592,7 +576,7 @@ sub _generate_message_UPDATE_array
       my ( $start, $count, @values ) = @args;
       $message->pack_int( $start );
       $message->pack_int( $count );
-      $message->pack_all_sametype( $type, @values );
+      $message->pack_all_sametype( $pdef->type, @values );
    }
    elsif( $how == CHANGE_MOVE ) {
       my ( $index, $delta ) = @args;
@@ -607,16 +591,11 @@ sub _generate_message_UPDATE_array
 sub _generate_message_UPDATE_objset
 {
    my $self = shift;
-   my ( $message, $how, $type, @args ) = @_;
+   my ( $message, $how, $pdef, @args ) = @_;
 
-   if( $how == CHANGE_SET ) {
+   if( $how == CHANGE_ADD ) {
       my ( $value ) = @args;
-      # This will arrive in a plain LIST ref
-      $message->pack_typed( "list($type)", $value );
-   }
-   elsif( $how == CHANGE_ADD ) {
-      my ( $value ) = @args;
-      $message->pack_typed( $type, $value );
+      $message->pack_typed( $pdef->type, $value );
    }
    elsif( $how == CHANGE_DEL ) {
       my ( $id ) = @args;

@@ -8,7 +8,7 @@ package Tangence::Meta::Event;
 use strict;
 use warnings;
 
-our $VERSION = '0.11';
+our $VERSION = '0.12';
 
 use Scalar::Util qw( weaken );
 
@@ -41,7 +41,7 @@ Reference to the containing class
 
 Name of the event
 
-=item argtypes => ARRAY
+=item arguments => ARRAY
 
 Optional ARRAY reference containing arguments as
 L<Tangence::Meta::Argument> references.

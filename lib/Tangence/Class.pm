@@ -28,16 +28,9 @@ BEGIN {
    }
 }
 
-our $VERSION = '0.11';
+our $VERSION = '0.12';
 
 our %metas; # cache one per class, keyed by _Tangence_ class name
-
-# It would be really useful to put this in List::Utils or somesuch
-sub pairmap(&@)
-{
-   my $code = shift;
-   return map { $code->( local $a = shift, local $b = shift ) } 0 .. @_/2-1;
-}
 
 sub new
 {
@@ -46,6 +39,12 @@ sub new
    my $name = $args{name};
 
    return $metas{$name} ||= $class->SUPER::new( @_ );
+}
+
+sub _new_type
+{
+   my ( $sig ) = @_;
+   return Tangence::Meta::Type->new_from_sig( $sig );
 }
 
 sub declare
@@ -74,8 +73,9 @@ sub declare
          name => $_,
          %{ $args{methods}{$_} },
          arguments => [ map {
-            Tangence::Meta::Argument->new( name => $_->[0], type => $_->[1] )
+            Tangence::Meta::Argument->new( name => $_->[0], type => _new_type( $_->[1] ) )
          } @{ $args{methods}{$_}{args} } ],
+         ret => _new_type( $args{methods}{$_}{ret} ),
       );
    }
 
@@ -85,7 +85,7 @@ sub declare
          name => $_,
          %{ $args{events}{$_} },
          arguments => [ map {
-            Tangence::Meta::Argument->new( name => $_->[0], type => $_->[1] )
+            Tangence::Meta::Argument->new( name => $_->[0], type => _new_type( $_->[1] ) )
          } @{ $args{events}{$_}{args} } ],
       );
    }
@@ -96,6 +96,7 @@ sub declare
          name => $_,
          %{ $args{props}{$_} },
          dimension => $args{props}{$_}{dim} || DIM_SCALAR,
+         type => _new_type( $args{props}{$_}{type} ),
       );
    }
 
@@ -179,37 +180,11 @@ sub property
 sub smashkeys
 {
    my $self = shift;
-   my %smash;
-   $smash{$_->name} = 1 for grep { $_->smashed } values %{ $self->properties };
-   return \%smash;
-}
-
-sub introspect
-{
-   my $self = shift;
-
-   my $ret = {
-      methods    => { 
-         pairmap {
-            $a => { args => [ $b->argtypes ], ret => $b->ret || "" }
-         } %{ $self->methods }
-      },
-      events     => {
-         pairmap {
-            $a => { args => [ $b->argtypes ] }
-         } %{ $self->events }
-      },
-      properties => {
-         pairmap {
-            $a => { type => $b->type, dim => $b->dimension, $b->smashed ? ( smash => 1 ) : () }
-         } %{ $self->properties }
-      },
-      isa        => [
-         grep { $_ ne "Tangence::Object" } $self->perlname, map { $_->perlname } $self->superclasses
-      ],
+   return $self->{smashkeys} ||= do {
+      my %smash;
+      $smash{$_->name} = 1 for grep { $_->smashed } values %{ $self->properties };
+      $Tangence::Message::SORT_HASH_KEYS ? [ sort keys %smash ] : [ keys %smash ];
    };
-
-   return $ret;
 }
 
 sub build_accessor

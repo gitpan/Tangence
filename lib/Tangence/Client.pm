@@ -1,7 +1,7 @@
 #  You may distribute under the terms of either the GNU General Public License
 #  or the Artistic License (the same terms as Perl itself)
 #
-#  (C) Paul Evans, 2010-2011 -- leonerd@leonerd.org.uk
+#  (C) Paul Evans, 2010-2012 -- leonerd@leonerd.org.uk
 
 package Tangence::Client;
 
@@ -10,12 +10,14 @@ use warnings;
 
 use base qw( Tangence::Stream );
 
-our $VERSION = '0.11';
+our $VERSION = '0.12';
 
 use Carp;
 
 use Tangence::Constants;
 use Tangence::ObjectProxy;
+
+use constant VERSION_MINOR_MIN => 0;
 
 =head1 NAME
 
@@ -83,7 +85,6 @@ The following methods are provided by this mixin.
 
 # Accessors for Tangence::Message decoupling
 sub objectproxies { shift->{objectproxies} ||= {} }
-sub schemata      { shift->{schemata} ||= {} }
 
 =head2 $rootobj = $client->rootobj
 
@@ -128,6 +129,13 @@ It takes the following named arguments:
 
 =over 8
 
+=item do_init => BOOL
+
+Optional. If true, sends the C<MSG_INIT> message first, to negotiate protocol
+version number. This will be performed by default in a future version, but is
+left optional for now, to accomodate servers that do not yet recognise
+C<MSG_INIT>.
+
 =item on_root => CODE
 
 Optional callback to be invoked once the root object has been returned. It
@@ -147,6 +155,46 @@ be passed a L<Tangence::ObjectProxy> to the registry.
 =cut
 
 sub tangence_connected
+{
+   my $self = shift;
+   my %args = @_;
+
+   # Don't yet do MSG_INIT by default to support version -1 servers; but allow
+   # it optionally if requested
+   if( $args{do_init} ) {
+      $self->request(
+         request => Tangence::Message->new( $self, MSG_INIT )
+            ->pack_int( VERSION_MAJOR )
+            ->pack_int( VERSION_MINOR )
+            ->pack_int( VERSION_MINOR_MIN ),
+
+         on_response => sub {
+            my ( $message ) = @_;
+            my $type = $message->type;
+
+            if( $type == MSG_INITED ) {
+               my $major = $message->unpack_int();
+               my $minor = $message->unpack_int();
+
+               $self->minor_version( $minor );
+               $self->tangence_initialised( %args );
+            }
+            elsif( $type == MSG_ERROR ) {
+               my $msg = $message->unpack_str();
+               print STDERR "Cannot initialise stream - error $msg";
+            }
+            else {
+               print STDERR "Cannot initialise stream - code $type\n";
+            }
+         },
+      );
+   }
+   else {
+      $self->tangence_initialised( %args );
+   }
+}
+
+sub tangence_initialised
 {
    my $self = shift;
    my %args = @_;
@@ -259,7 +307,7 @@ sub make_proxy
 
    my $schema;
    if( defined $class ) {
-      $schema = $self->schemata->{$class};
+      $schema = $self->peer_hasclass->{$class}->[0];
       defined $schema or croak "Cannot construct a proxy for class $class as no schema exists";
    }
 

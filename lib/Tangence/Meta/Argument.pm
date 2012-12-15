@@ -1,14 +1,14 @@
 #  You may distribute under the terms of either the GNU General Public License
 #  or the Artistic License (the same terms as Perl itself)
 #
-#  (C) Paul Evans, 2011 -- leonerd@leonerd.org.uk
+#  (C) Paul Evans, 2011-2012 -- leonerd@leonerd.org.uk
 
 package Tangence::Meta::Argument;
 
 use strict;
 use warnings;
 
-our $VERSION = '0.11';
+our $VERSION = '0.12';
 
 =head1 NAME
 
@@ -39,7 +39,7 @@ Name of the argument
 
 =item type => STRING
 
-Type of the arugment
+Type of the arugment as a L<Tangence::Meta::Type> reference
 
 =back
 
@@ -70,7 +70,7 @@ sub name
 
 =head2 $type = $argument->type
 
-Return the type
+Return the type as a L<Tangence::Meta::Type> reference.
 
 =cut
 
