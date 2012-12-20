@@ -9,7 +9,7 @@ use strict;
 use warnings;
 use 5.010; # //
 
-our $VERSION = '0.12';
+our $VERSION = '0.13';
 
 use Carp;
 
@@ -88,6 +88,7 @@ The following methods are provided by this mixin.
 =cut
 
 # Accessors for Tangence::Message decoupling
+sub message_state { shift->{message_state} ||= {} }
 sub peer_hasobj   { shift->{peer_hasobj} ||= {} }
 sub peer_hasclass { shift->{peer_hasclass} ||= {} }
 
@@ -273,6 +274,14 @@ sub minor_version
    ( $self->{tangence_minor_version} ) = @_ if @_;
    return $self->{tangence_minor_version} // 0;
 }
+
+# Some (internal) methods that control new protocol features
+
+# wire protocol uses Tangence (rather than \0-terminated) strings in all places
+sub _ver_tangence_strings { shift->minor_version >= 1 }
+
+# wire protocol puts ID numbers on DATAMETA_CLASS and _CONSTRUCT messages
+sub _ver_class_idnums { shift->minor_version >= 1 }
 
 =head1 AUTHOR
 

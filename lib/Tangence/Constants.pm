@@ -8,7 +8,7 @@ package Tangence::Constants;
 use strict;
 use warnings;
 
-our $VERSION = '0.12';
+our $VERSION = '0.13';
 
 use Exporter 'import';
 our @EXPORT = qw(
@@ -174,11 +174,11 @@ use constant DATA_LIST   => 2; # List: num=elements: value0 . value1...
 use constant DATA_DICT   => 3; # Dictionary: num=pairs: key0 . value0 . key1 . value1...
 use constant DATA_OBJECT => 4; # Object: num=bytes: objid
 use constant DATA_META   => 7; # Meta stream operation: num=:
-use constant DATAMETA_CONSTRUCT => 1; # Construct: num(id), typenameZ
-use constant DATAMETA_CLASS     => 2; # Class: typenameZ, schema
+use constant DATAMETA_CONSTRUCT => 1; # Construct: num(id), typename
+use constant DATAMETA_CLASS     => 2; # Class: typename, introspection
 
 use constant VERSION_MAJOR => 0;
-use constant VERSION_MINOR => 0;
+use constant VERSION_MINOR => 1;
 
 =head1 AUTHOR
 
