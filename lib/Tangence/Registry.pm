@@ -9,12 +9,13 @@ use strict;
 use warnings;
 use base qw( Tangence::Object );
 
-our $VERSION = '0.13';
+our $VERSION = '0.14';
 
 use Carp;
 
 use Tangence::Constants;
 use Tangence::Class;
+use Tangence::Struct;
 
 use Tangence::Compiler::Parser;
 
@@ -190,6 +191,12 @@ sub make_class
 {
    my $self = shift;
    return Tangence::Class->new( @_ );
+}
+
+sub make_struct
+{
+   my $self = shift;
+   return Tangence::Struct->new( @_ );
 }
 
 =head1 AUTHOR

@@ -10,7 +10,7 @@ use warnings;
 
 use base qw( Tangence::Stream );
 
-our $VERSION = '0.13';
+our $VERSION = '0.14';
 
 use Carp;
 
@@ -19,8 +19,8 @@ use Scalar::Util qw( weaken );
 use Tangence::Constants;
 use Tangence::Server::Context;
 
-# We will accept any version back to 0
-use constant VERSION_MINOR_MIN => 0;
+# We will accept any version back to 1
+use constant VERSION_MINOR_MIN => 1;
 
 BEGIN {
    if( eval { require Sub::Name } ) {

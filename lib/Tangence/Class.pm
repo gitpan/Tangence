@@ -28,7 +28,7 @@ BEGIN {
    }
 }
 
-our $VERSION = '0.13';
+our $VERSION = '0.14';
 
 our %metas; # cache one per class, keyed by _Tangence_ class name
 
@@ -127,6 +127,14 @@ sub define
    }
 }
 
+sub for_name
+{
+   my $class = shift;
+   my ( $name ) = @_;
+
+   return $metas{$name} or croak "Unknown Tangence::Class for '$name'";
+}
+
 sub for_perlname
 {
    my $class = shift;
@@ -134,13 +142,6 @@ sub for_perlname
 
    ( my $name = $perlname ) =~ s{::}{.}g;
    return $metas{$name} or croak "Unknown Tangence::Class for '$perlname'";
-}
-
-sub perlname
-{
-   my $self = shift;
-   ( my $perlname = $self->name ) =~ s{\.}{::}g; # s///rg in 5.14
-   return $perlname;
 }
 
 sub superclasses

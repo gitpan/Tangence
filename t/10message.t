@@ -2,7 +2,7 @@
 
 use strict;
 
-use Test::More tests => 162;
+use Test::More tests => 180;
 use Test::Fatal qw( dies_ok );
 use Test::HexString;
 
@@ -12,13 +12,30 @@ $Tangence::Message::SORT_HASH_KEYS = 1;
 use Tangence::Meta::Type;
 sub _make_type { Tangence::Meta::Type->new_from_sig( shift ) }
 
+my $VERSION_MINOR = Tangence::Constants->VERSION_MINOR;
+
 {
    # We need a testing stream that declares a version
    package TestStream;
    use base qw( Tangence::Stream );
 
+   sub minor_version { $VERSION_MINOR }
+
    sub new { bless {}, shift }
+
+   # Stub the methods we don't care about
+   sub _install_watch { }
+   sub make_proxy { }
+   sub get_by_id { my ( $self, $id ) = @_; "OBJPROXY[id=$id]" }
 }
+
+Tangence::Struct->declare(
+   "TestRecord",
+   fields => [
+      one => "int",
+      two => "str",
+   ],
+);
 
 sub test_specific
 {
@@ -55,6 +72,19 @@ sub test_specific_dies
       $m->$unpack_method()
    }, "unpack $name dies" ) if exists $args{stream};
 }
+
+use Tangence::Registry;
+use t::Ball;
+
+my $registry = Tangence::Registry->new(
+   tanfile => "t/Ball.tan",
+);
+
+my $ball = $registry->construct(
+   "t::Ball",
+   colour => "red",
+);
+$ball->id == 1 or die "Expected ball->id to be 1";
 
 test_specific "bool f",
    type   => "bool",
@@ -136,6 +166,57 @@ test_specific_dies "string from undef",
    type   => "str",
    data   => undef,
    stream => "\x80";
+
+test_specific "object",
+   type   => "obj",
+   data   => $ball,
+             # DATAMETA_CLASS
+   stream => "\xe2" . "\x2ct.Colourable" .
+                      "\x02\1" .
+                      "\xa4" . "\x02\1" .
+                               "\x60" .
+                               "\x60" .
+                               "\x61" . "\x26colour" . "\xa3" . "\x02\4" .
+                                                                "\x02\1" .
+                                                                "\x23str" .
+                                                                "\x00" .
+                               "\x40" .
+                      "\x40" .
+             # DATAMETA_CLASS
+             "\xe2" . "\x26t.Ball" .
+                      "\x02\2" .
+                      "\xa4" . "\x02\1" .
+                               "\x61" . "\x26bounce" . "\xa2" . "\x02\2" .
+                                                                "\x41" . "\x23str" .
+                                                                "\x23str" .
+                               "\x61" . "\x27bounced" . "\xa1" . "\x02\3" .
+                                                                 "\x41" . "\x23str" .
+                               "\x61" . "\x24size" . "\xa3" . "\x02\4" .
+                                                              "\x02\1" .
+                                                              "\x23int" .
+                                                              "\x01" .
+                               "\x41" . "\x2ct.Colourable" .
+                      "\x41" . "\x24size" .
+             # DATAMETA_CONSTRUCT
+             "\xe1" . "\x02\1" .
+                      "\x02\2" .
+                      "\x41" . "\x80" .
+             # DATA_OBJ
+             "\x84" . "\0\0\0\1",
+   retdata => "OBJPROXY[id=1]";
+
+test_specific "record",
+   type   => "record",
+   data   => TestRecord->new( one => 1, two => 2 ),
+             # DATAMETA_STRUCT
+   stream => "\xe3" . "\x2aTestRecord" .
+                      "\x02\1" .
+                      "\x42" . "\x23one" . "\x23two" .
+                      "\x42" . "\x23int" . "\x23str" .
+             # DATA_RECORD
+             "\xa2" . "\x02\1" .
+                      "\x02\1" .
+                      "\x212";
 
 sub test_typed
 {
@@ -265,7 +346,7 @@ test_typed_dies "list(string) from ARRAY(ARRAY)",
 test_typed "dict(string)",
    sig    => 'dict(str)',
    data   => { one => "one", },
-   stream => "\x61one\0\x23one";
+   stream => "\x61\x23one\x23one";
 
 test_typed_dies "dict(string) from string",
    sig    => 'dict(str)',
@@ -275,7 +356,7 @@ test_typed_dies "dict(string) from string",
 test_typed_dies "dict(string) from HASH(ARRAY)",
    sig    => 'dict(str)',
    data   => { splot => [] },
-   stream => "\x61splot\0\x40";
+   stream => "\x61\x65splot\x40";
 
 test_typed "any (undef)",
    sig    => "any",
@@ -315,17 +396,30 @@ test_typed "any (HASH empty)",
 test_typed "any (HASH of string*1)",
    sig    => "any",
    data   => { key => "value" },
-   stream => "\x61key\0\x25value";
+   stream => "\x61\x23key\x25value";
 
 test_typed "any (HASH of string*2)",
    sig    => "any",
    data   => { a => "A", b => "B" },
-   stream => "\x62a\0\x{21}Ab\0\x{21}B";
+   stream => "\x62\x21a\x{21}A\x21b\x{21}B";
 
 test_typed "any (HASH of HASH)",
    sig    => "any",
    data   => { hash => {} },
-   stream => "\x61hash\0\x60";
+   stream => "\x61\x24hash\x60";
+
+test_typed "any (record)",
+   sig    => "any",
+   data   => TestRecord->new( one => 3, two => 4 ),
+             # DATAMETA_STRUCT
+   stream => "\xe3" . "\x2aTestRecord" .
+                      "\x02\1" .
+                      "\x42" . "\x23one" . "\x23two" .
+                      "\x42" . "\x23int" . "\x23str" .
+             # DATA_RECORD
+             "\xa2" . "\x02\1" .
+                      "\x02\3" .
+                      "\x214";
 
 my $m;
 
@@ -344,3 +438,46 @@ is_hexstr( $m->{record}, "\x02\x0a\x02\x14\x02\x1e", 'pack_all_sametype' );
 
 is_deeply( [ $m->unpack_all_sametype( _make_type('int') ) ], [ 10, 20, 30 ], 'unpack_all_sametype' );
 is( length $m->{record}, 0, "eats all stream for all_sametype" );
+
+$VERSION_MINOR = 1;
+# records should no longer work
+
+test_typed_dies "any from record on minor version 1",
+   sig    => "any",
+   data   => TestRecord->new( one => 5, two => 6 ),
+             # DATAMETA_STRUCT
+   stream => "\xe3" . "\x2aTestRecord" .
+                      "\x02\1" .
+                      "\x42" . "\x23one" . "\x23two" .
+                      "\x42" . "\x23int" . "\x23str" .
+             # DATA_RECORD
+             "\xa2" . "\x02\1" .
+                      "\x02\5" .
+                      "\x216";
+
+# Old introspection dict-based class serialisation
+test_specific "object",
+   type   => "obj",
+   data   => $ball,
+             # DATAMETA_CLASS
+   stream => "\xe2" . "\x27t::Ball" .
+                      "\x02\1" .
+                      "\x64" . "\x26events" . "\x62" . "\x27bounced" . "\x61" . "\x24args" . "\x41" . "\x23str" .
+                                                       "\x27destroy" . "\x61" . "\x24args" . "\x40" .
+                               "\x23isa" . "\x42" . "\x27t::Ball" .
+                                                    "\x2dt::Colourable" .
+                               "\x27methods" . "\x61" . "\x26bounce" . "\x62" . "\x24args" . "\x41" . "\x23str" .
+                                                                                "\x23ret" . "\x23str" .
+                               "\x2aproperties" . "\x62" . "\x26colour" . "\x62" . "\x23dim" . "\x211" .
+                                                                                   "\x24type" . "\x23str" .
+                                                           "\x24size" . "\x63" . "\x23dim" . "\x211" .
+                                                                                 "\x25smash" . "\x211" .
+                                                                                 "\x24type" . "\x23int" .
+                      "\x41" . "\x24size" .
+             # DATAMETA_CONSTRUCT
+             "\xe1" . "\x02\1" .
+                      "\x02\1" .
+                      "\x41" . "\x80" .
+             # DATA_OBJ
+             "\x84" . "\0\0\0\1",
+   retdata => "OBJPROXY[id=1]";

@@ -9,7 +9,7 @@ use strict;
 use warnings;
 use 5.010; # //
 
-our $VERSION = '0.13';
+our $VERSION = '0.14';
 
 use Carp;
 
@@ -88,9 +88,21 @@ The following methods are provided by this mixin.
 =cut
 
 # Accessors for Tangence::Message decoupling
-sub message_state { shift->{message_state} ||= {} }
-sub peer_hasobj   { shift->{peer_hasobj} ||= {} }
-sub peer_hasclass { shift->{peer_hasclass} ||= {} }
+our $BUILTIN_STRUCTIDS;
+our %BUILTIN_ID2STRUCT;
+our %ALWAYS_PEER_HASSTRUCT;
+
+sub message_state
+{
+   shift->{message_state} ||= {
+      id2struct     => { %BUILTIN_ID2STRUCT },
+      next_structid => $BUILTIN_STRUCTIDS,
+   }
+}
+
+sub peer_hasobj    { shift->{peer_hasobj}    ||= {} }
+sub peer_hasclass  { shift->{peer_hasclass}  ||= {} }
+sub peer_hasstruct { shift->{peer_hasstruct} ||= { %ALWAYS_PEER_HASSTRUCT } }
 
 sub identity
 {
@@ -139,6 +151,11 @@ sub tangence_readfrom
          my $token = \$self->{request_queue}[-1];
 
          my $type = $message->type;
+
+         if( !$self->minor_version and $type != MSG_INIT ) {
+            $self->respondERROR( $token, "Cannot accept any message except MSG_INIT before MSG_INIT" );
+            next;
+         }
 
          if( my $method = $REQ_METHOD{$type} ) {
             if( $self->can( $method ) ) {
@@ -277,11 +294,11 @@ sub minor_version
 
 # Some (internal) methods that control new protocol features
 
-# wire protocol uses Tangence (rather than \0-terminated) strings in all places
-sub _ver_tangence_strings { shift->minor_version >= 1 }
+# wire protocol understands DATA_RECORD and DATAMETA_STRUCT
+sub _ver_has_records { shift->minor_version >= 2 }
 
-# wire protocol puts ID numbers on DATAMETA_CLASS and _CONSTRUCT messages
-sub _ver_class_idnums { shift->minor_version >= 1 }
+# wire protocol encodes Class as record
+sub _ver_class_as_record { shift->minor_version >= 2 }
 
 =head1 AUTHOR
 

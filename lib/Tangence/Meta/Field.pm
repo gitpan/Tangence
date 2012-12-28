@@ -1,9 +1,9 @@
 #  You may distribute under the terms of either the GNU General Public License
 #  or the Artistic License (the same terms as Perl itself)
 #
-#  (C) Paul Evans, 2011-2012 -- leonerd@leonerd.org.uk
+#  (C) Paul Evans, 2012 -- leonerd@leonerd.org.uk
 
-package Tangence::Meta::Argument;
+package Tangence::Meta::Field;
 
 use strict;
 use warnings;
@@ -12,14 +12,13 @@ our $VERSION = '0.14';
 
 =head1 NAME
 
-C<Tangence::Meta::Argument> - structure representing one C<Tangence>
-method or event argument
+C<Tangence::Meta::Field> - structure representing one C<Tangence> structure
+field
 
 =head1 DESCRIPTION
 
-This data structure object stores information about one argument to a
-L<Tangence> class method or event. Once constructed, such objects are
-immutable.
+This data structure object stores information about one field of a L<Tangence>
+structure. Once constructed, such objects are immutable.
 
 =cut
 
@@ -27,19 +26,19 @@ immutable.
 
 =cut
 
-=head2 $argument = Tangence::Meta::Argument->new( %args )
+=head2 $field = Tangence::Meta::Field->new( %args )
 
-Returns a new instance initialised by the given arguments.
+Returns a new instance initialised by the given fields.
 
 =over 8
 
 =item name => STRING
 
-Name of the argument
+Name of the field
 
 =item type => STRING
 
-Type of the arugment as a L<Tangence::Meta::Type> reference
+Type of the field as a L<Tangence::Meta::Type> reference
 
 =back
 
@@ -56,9 +55,9 @@ sub new
 
 =cut
 
-=head2 $name = $argument->name
+=head2 $name = $field->name
 
-Returns the name of the class
+Returns the name of the field
 
 =cut
 
@@ -68,7 +67,7 @@ sub name
    return $self->{name};
 }
 
-=head2 $type = $argument->type
+=head2 $type = $field->type
 
 Return the type as a L<Tangence::Meta::Type> reference.
 

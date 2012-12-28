@@ -13,13 +13,14 @@ use warnings;
 # restriction could be listed.
 use 5.010; 
 
-our $VERSION = '0.13';
+our $VERSION = '0.14';
 
 use Carp;
 
 use Tangence::Constants;
 
 use Tangence::Meta::Type;
+use Tangence::Struct;
 
 use Encode qw( encode_utf8 decode_utf8 );
 use Scalar::Util qw( weaken );
@@ -124,6 +125,9 @@ sub _peek_leader_type
       }
       elsif( $num == DATAMETA_CLASS ) {
          $self->unpackmeta_class;
+      }
+      elsif( $num == DATAMETA_STRUCT ) {
+         $self->unpackmeta_struct;
       }
       else {
          die sprintf("TODO: Data stream meta-operation 0x%02x", $num);
@@ -264,22 +268,6 @@ sub unpack_str
    return decode_utf8( $octets );
 }
 
-# Temporary methods for null-terminated strings. Will be removed once we no
-# longer support protocol version 0
-sub pack_stringZ
-{
-   my $self = shift;
-   $self->{record} .= pack( "Z*", $_[0] );
-}
-
-sub unpack_stringZ
-{
-   my $self = shift;
-   my ( $string ) = unpack( "Z*", $self->{record} );
-   substr( $self->{record}, 0, 1 + length $string, "" );
-   return $string;
-}
-
 sub pack_obj
 {
    my $self = shift;
@@ -371,12 +359,7 @@ sub pack_dict
    @keys = sort @keys if $SORT_HASH_KEYS;
 
    $self->_pack_leader( DATA_DICT, scalar @keys );
-   if( $self->{stream}->_ver_tangence_strings ) {
-      $self->pack_str( $_ ) and $self->pack_typed( $member_type, $dict->{$_} ) for @keys;
-   }
-   else {
-      $self->pack_stringZ( $_ ) and $self->pack_typed( $member_type, $dict->{$_} ) for @keys;
-   }
+   $self->pack_str( $_ ) and $self->pack_typed( $member_type, $dict->{$_} ) for @keys;
 
    return $self;
 }
@@ -392,16 +375,63 @@ sub unpack_dict
    my $member_type = $dicttype->member_type;
    my %h;
    foreach ( 1 .. $num ) {
-      my $key;
-      if( $self->{stream}->_ver_tangence_strings ) {
-         $key = $self->unpack_str();
-      }
-      else {
-         $key = $self->unpack_stringZ();
-      }
+      my $key = $self->unpack_str();
       $h{$key} = $self->unpack_typed( $member_type );
    }
    return \%h;
+}
+
+sub pack_record
+{
+   my $self = shift;
+   my ( $rec, $struct ) = @_;
+
+   my $stream = $self->{stream};
+
+   $struct ||= eval { Tangence::Struct->for_perlname( ref $rec ) } or
+      croak "No struct for " . ref $rec;
+
+   $self->packmeta_struct( $struct ) unless $stream->peer_hasstruct->{$struct->perlname};
+
+   my @fields = $struct->fields;
+   $self->_pack_leader( DATA_RECORD, scalar @fields );
+   $self->pack_int( $stream->peer_hasstruct->{$struct->perlname}->[1] );
+   foreach my $field ( @fields ) {
+      my $fieldname = $field->name;
+      $self->pack_typed( $field->type, $rec->$fieldname );
+   }
+
+   return $self;
+}
+
+sub unpack_record
+{
+   my $self = shift;
+   my ( $struct ) = @_;
+
+   my $stream = $self->{stream};
+
+   my ( $type, $num ) = $self->_unpack_leader();
+   $type == DATA_RECORD or croak "Expected to unpack a record but did not find one";
+
+   my $structid = $self->unpack_int();
+   my $got_struct = $stream->message_state->{id2struct}{$structid};
+   if( !$struct ) {
+      $struct = $got_struct;
+   }
+   else {
+      $struct->name eq $got_struct->name or
+         croak "Expected to unpack a ".$struct->name." but found ".$got_struct->name;
+   }
+
+   $num == $struct->fields or croak "Expected ".$struct->name." to unpack from ".(scalar $struct->fields)." fields";
+
+   my %values;
+   foreach my $field ( $struct->fields ) {
+      $values{$field->name} = $self->unpack_typed( $field->type );
+   }
+
+   return $struct->perlname->new( %values );
 }
 
 sub packmeta_construct
@@ -419,19 +449,8 @@ sub packmeta_construct
    my $smashkeys = $class->smashkeys;
 
    $self->_pack_leader( DATA_META, DATAMETA_CONSTRUCT );
-   if( $stream->_ver_class_idnums ) {
-      $self->pack_int( $id );
-      $self->pack_int( $stream->peer_hasclass->{$class->perlname}->[2] );
-   }
-   else {
-      $self->{record} .= pack( "N", $id );
-      if( $stream->_ver_tangence_strings ) {
-         $self->pack_str( $class->perlname );
-      }
-      else {
-         $self->pack_stringZ( $class->perlname );
-      }
-   }
+   $self->pack_int( $id );
+   $self->pack_int( $stream->peer_hasclass->{$class->perlname}->[2] );
 
    my $smasharr = [];
 
@@ -458,22 +477,9 @@ sub unpackmeta_construct
 
    my $stream = $self->{stream};
 
-   my $id;
-   my $class;
-   if( $stream->_ver_class_idnums ) {
-      $id = $self->unpack_int();
-      my $classid = $self->unpack_int();
-      $class = $stream->message_state->{id2class}{$classid};
-   }
-   else {
-      ( $id ) = unpack( "N", $self->{record} ); substr( $self->{record}, 0, 4, "" );
-      if( $stream->_ver_tangence_strings ) {
-         $class = $self->unpack_str();
-      }
-      else {
-         $class = $self->unpack_stringZ();
-      }
-   }
+   my $id = $self->unpack_int();
+   my $classid = $self->unpack_int();
+   my $class = $stream->message_state->{id2class}{$classid};
    my $smasharr = $self->unpack_typed( TYPE_LIST_ANY );
 
    my $smashkeys = $stream->peer_hasclass->{$class}->[1];
@@ -484,16 +490,13 @@ sub unpackmeta_construct
    $stream->make_proxy( $id, $class, $smashdata );
 }
 
-sub packmeta_class
+# Temporarily here so we can move the logic eventually into the client
+# Longterm it won't stay because client will work directly on Meta:: objects
+sub _introspect_class
 {
-   my $self = shift;
-   my ( $class ) = @_;
+   my $class = shift;
 
-   my $stream = $self->{stream};
-
-   $self->_pack_leader( DATA_META, DATAMETA_CLASS );
-
-   my $introspection = {
+   return {
       methods    => { 
          pairmap {
             $a => { args => [ map { $_->sig } $b->argtypes ], ret => ( $b->ret ? $b->ret->sig : "" ) }
@@ -513,24 +516,66 @@ sub packmeta_class
          grep { $_ ne "Tangence::Object" } $class->perlname, map { $_->perlname } $class->superclasses
       ],
    };
+}
 
+sub packmeta_class
+{
+   my $self = shift;
+   my ( $class ) = @_;
+
+   my $stream = $self->{stream};
+
+   my @superclasses = grep { $_->name ne "Tangence.Object" } $class->direct_superclasses;
+
+   if( $stream->_ver_class_as_record ) {
+      $stream->peer_hasclass->{$_->perlname} or $self->packmeta_class( $_ ) for @superclasses;
+   }
+
+   $self->_pack_leader( DATA_META, DATAMETA_CLASS );
+
+   my $introspection = _introspect_class( $class );
    my $smashkeys = $class->smashkeys;
 
-   my $classid;
-   if( $stream->_ver_class_idnums ) {
-      $classid = ++$stream->message_state->{next_classid};
-      $self->pack_str( $class->perlname );
+   my $classid = ++$stream->message_state->{next_classid};
+
+   if( $stream->_ver_class_as_record ) {
+      $self->pack_str( $class->name );
       $self->pack_int( $classid );
+      my $classrec = Tangence::Struct::Class->new(
+         methods => {
+            pairmap {
+               $a => Tangence::Struct::Method->new(
+                  arguments => [ map { $_->type->sig } $b->arguments ],
+                  returns   => ( $b->ret ? $b->ret->sig : "" ),
+               )
+            } %{ $class->direct_methods }
+         },
+         events => {
+            pairmap {
+               $a => Tangence::Struct::Event->new(
+                  arguments => [ map { $_->type->sig } $b->arguments ],
+               )
+            } %{ $class->direct_events }
+         },
+         properties => {
+            pairmap {
+               $a => Tangence::Struct::Property->new(
+                  dimension => $b->dimension,
+                  type      => $b->type->sig,
+                  smashed   => $b->smashed,
+               )
+            } %{ $class->direct_properties }
+         },
+         superclasses => [ map { $_->name } @superclasses ],
+      );
+      $self->pack_any( $classrec );
    }
    else {
-      if( $stream->_ver_tangence_strings ) {
-         $self->pack_str( $class->perlname );
-      }
-      else {
-         $self->pack_stringZ( $self->perlname );
-      }
+      $self->pack_str( $class->perlname );
+      $self->pack_int( $classid );
+      $self->pack_typed( TYPE_DICT_ANY, $introspection );
    }
-   $self->pack_typed( TYPE_DICT_ANY, $introspection );
+
    $self->pack_typed( TYPE_LIST_STR, $smashkeys );
 
    $stream->peer_hasclass->{$class->perlname} = [ $introspection, $smashkeys, $classid ];
@@ -542,22 +587,79 @@ sub unpackmeta_class
 
    my $stream = $self->{stream};
 
-   my $class;
+   my $perlname;
    my $classid;
-   if( $stream->_ver_class_idnums ) {
-      $class = $self->unpack_str();
+
+   my $class;
+   my $introspection;
+   if( $stream->_ver_class_as_record ) {
+      my $name = $self->unpack_str();
       $classid = $self->unpack_int();
+      my $classrec = $self->unpack_any();
+
+      $class = Tangence::Meta::Class->new( name => $name );
+      $class->define(
+         methods => { 
+            pairmap {
+               $a => Tangence::Meta::Method->new(
+                  class     => $class,
+                  name      => $a,
+                  ret       => Tangence::Meta::Type->new_from_sig( $b->returns ),
+                  arguments => [ map {
+                     Tangence::Meta::Argument->new(
+                        type => Tangence::Meta::Type->new_from_sig( $_ ),
+                     )
+                  } @{ $b->arguments } ],
+               )
+            } %{ $classrec->methods }
+         },
+
+         events => {
+            pairmap {
+               $a => Tangence::Meta::Event->new(
+                  class     => $class,
+                  name      => $a,
+                  arguments => [ map {
+                     Tangence::Meta::Argument->new(
+                        type => Tangence::Meta::Type->new_from_sig( $_ ),
+                     )
+                  } @{ $b->arguments } ],
+               )
+            } %{ $classrec->events }
+         },
+
+         properties => {
+            pairmap {
+               $a => Tangence::Meta::Property->new(
+                  class     => $class,
+                  name      => $a,
+                  dimension => $b->dimension,
+                  type      => Tangence::Meta::Type->new_from_sig( $b->type ),
+                  smashed   => $b->smashed,
+               )
+            } %{ $classrec->properties }
+         },
+
+         superclasses => do {
+            my @superclasses = map {
+               ( my $perlname = $_ ) =~ s/\./::/g;
+               $stream->peer_hasclass->{$perlname}->[3] or croak "Unrecognised class $perlname";
+            } @{ $classrec->superclasses };
+            
+            @superclasses ? \@superclasses : [ Tangence::Class->for_name( "Tangence.Object" ) ]
+         },
+      );
+
+      $perlname = $class->perlname;
+      $introspection = _introspect_class( $class );
    }
    else {
-      if( $stream->_ver_tangence_strings ) {
-         $class = $self->unpack_str();
-      }
-      else {
-         $class = $self->unpack_stringZ();
-      }
+      $perlname = $self->unpack_str();
+      $classid  = $self->unpack_int();
+      $introspection = $self->unpack_typed( TYPE_DICT_ANY );
    }
-   my $introspection = $self->unpack_typed( TYPE_DICT_ANY );
-   my $smashkeys     = $self->unpack_typed( TYPE_LIST_STR );
+
+   my $smashkeys = $self->unpack_typed( TYPE_LIST_STR );
 
    foreach my $mdef ( values %{ $introspection->{methods} } ) {
       $_ = Tangence::Meta::Type->new_from_sig( $_ ) for @{ $mdef->{args} };
@@ -570,10 +672,54 @@ sub unpackmeta_class
       $_ = Tangence::Meta::Type->new_from_sig( $_ ) for $pdef->{type};
    }
 
-   $stream->peer_hasclass->{$class} = [ $introspection, $smashkeys, $classid ];
+   $stream->peer_hasclass->{$perlname} = [ $introspection, $smashkeys, $classid, $class ];
    if( defined $classid ) {
-      $stream->message_state->{id2class}{$classid} = $class;
+      $stream->message_state->{id2class}{$classid} = $perlname;
    }
+}
+
+sub packmeta_struct
+{
+   my $self = shift;
+   my ( $struct ) = @_;
+
+   my $stream = $self->{stream};
+
+   $self->_pack_leader( DATA_META, DATAMETA_STRUCT );
+
+   my @fields = $struct->fields;
+
+   my $structid = ++$stream->message_state->{next_structid};
+   $self->pack_str( $struct->name );
+   $self->pack_int( $structid );
+   $self->pack_typed( TYPE_LIST_STR, [ map { $_->name } @fields ] );
+   $self->pack_typed( TYPE_LIST_STR, [ map { $_->type->sig } @fields ] );
+
+   $stream->peer_hasstruct->{$struct->perlname} = [ $struct, $structid ];
+}
+
+sub unpackmeta_struct
+{
+   my $self = shift;
+
+   my $stream = $self->{stream};
+
+   my $name     = $self->unpack_str();
+   my $structid = $self->unpack_int();
+   my $names    = $self->unpack_typed( TYPE_LIST_STR );
+   my $types    = $self->unpack_typed( TYPE_LIST_STR );
+
+   my $struct = Tangence::Struct->new( name => $name );
+   if( !$struct->defined ) {
+      $struct->define(
+         fields => [
+            map { $names->[$_] => $types->[$_] } 0 .. $#$names
+         ]
+      );
+   }
+
+   $stream->peer_hasstruct->{$struct->perlname} = [ $struct, $structid ];
+   $stream->message_state->{id2struct}{$structid} = $struct;
 }
 
 # Used by pack_typed
@@ -642,6 +788,10 @@ sub pack_any
    elsif( eval { $d->isa( "Tangence::Object" ) or $d->isa( "Tangence::ObjectProxy" ) } ) {
       $self->pack_obj( $d );
    }
+   elsif( my $struct = eval { Tangence::Struct->for_perlname( ref $d ) } ) {
+      $stream->_ver_has_records or croak "Cannot pack a record type as the stream version is too old";
+      $self->pack_record( $d, $struct );
+   }
    elsif( ref $d eq "ARRAY" ) {
       $self->pack_list( $d, TYPE_LIST_ANY );
    }
@@ -659,6 +809,8 @@ sub unpack_any
 {
    my $self = shift;
 
+   my $stream = $self->{stream};
+
    my $type = $self->_peek_leader_type();
 
    if( $type == DATA_NUMBER ) {
@@ -675,6 +827,10 @@ sub unpack_any
    }
    elsif( $type == DATA_DICT ) {
       return $self->unpack_dict( TYPE_DICT_ANY );
+   }
+   elsif( $type == DATA_RECORD ) {
+      $stream->_ver_has_records or croak "Was not expecting to unpack a record type as the stream version is too old";
+      return $self->unpack_record( undef );
    }
    else {
       croak "Do not know how to unpack record of type $type";
