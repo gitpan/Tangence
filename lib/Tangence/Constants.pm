@@ -1,14 +1,14 @@
 #  You may distribute under the terms of either the GNU General Public License
 #  or the Artistic License (the same terms as Perl itself)
 #
-#  (C) Paul Evans, 2010-2012 -- leonerd@leonerd.org.uk
+#  (C) Paul Evans, 2010-2013 -- leonerd@leonerd.org.uk
 
 package Tangence::Constants;
 
 use strict;
 use warnings;
 
-our $VERSION = '0.15';
+our $VERSION = '0.16';
 
 use Exporter 'import';
 our @EXPORT = qw(
@@ -22,6 +22,10 @@ our @EXPORT = qw(
    MSG_UNWATCH
    MSG_UPDATE
    MSG_DESTROY
+   MSG_GETPROPELEM
+   MSG_WATCH_ITER
+   MSG_ITER_NEXT
+   MSG_ITER_DESTROY
    MSG_GETROOT
    MSG_GETREGISTRY
    MSG_INIT
@@ -31,6 +35,8 @@ our @EXPORT = qw(
    MSG_RESULT
    MSG_SUBSCRIBED
    MSG_WATCHING
+   MSG_WATCHING_ITER
+   MSG_ITER_RESULT
    MSG_INITED
 
    DIM_SCALAR
@@ -50,6 +56,11 @@ our @EXPORT = qw(
    CHANGE_MOVE
 
    CHANGETYPES
+
+   ITER_FIRST
+   ITER_LAST
+   ITER_FWD
+   ITER_BACK
 
    DATA_NUMBER
    DATA_STRING
@@ -91,6 +102,10 @@ use constant MSG_WATCH => 0x07;
 use constant MSG_UNWATCH => 0x08;
 use constant MSG_UPDATE => 0x09;
 use constant MSG_DESTROY => 0x0a;
+use constant MSG_GETPROPELEM => 0x0b;
+use constant MSG_WATCH_ITER => 0x0c;
+use constant MSG_ITER_NEXT => 0x0d;
+use constant MSG_ITER_DESTROY => 0x0e;
 
 use constant MSG_GETROOT => 0x40;
 use constant MSG_GETREGISTRY => 0x41;
@@ -102,6 +117,8 @@ use constant MSG_ERROR => 0x81;
 use constant MSG_RESULT => 0x82;
 use constant MSG_SUBSCRIBED => 0x83;
 use constant MSG_WATCHING => 0x84;
+use constant MSG_WATCHING_ITER => 0x85;
+use constant MSG_ITER_RESULT => 0x86;
 
 use constant MSG_INITED => 0xff;
 
@@ -139,6 +156,12 @@ use constant CHANGETYPES => {
    DIM_OBJSET() => [qw( on_set on_add on_del )],
 };
 
+# Iterator messages
+use constant ITER_FIRST => 1;
+use constant ITER_LAST => 2;
+use constant ITER_FWD => 1;
+use constant ITER_BACK => 2;
+
 # Stream data types
 use constant DATA_NUMBER => 0;
 use constant DATANUM_BOOLFALSE => 0;
@@ -162,7 +185,7 @@ use constant DATAMETA_CLASS     => 2;
 use constant DATAMETA_STRUCT    => 3;
 
 use constant VERSION_MAJOR => 0;
-use constant VERSION_MINOR => 2;
+use constant VERSION_MINOR => 3;
 
 =head1 AUTHOR
 

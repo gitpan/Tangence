@@ -9,11 +9,21 @@ use Tangence::Constants;
 sub new
 {
    my $class = shift;
+   my %args = @_;
+   my $self = $class->SUPER::new( %args );
 
-   my $self = $class->SUPER::new( @_ );
-
+   for (qw( scalar array queue hash s_scalar )) {
+      $self->${\"set_prop_$_"}( $args{$_} ) if defined $args{$_};
+   }
 
    return $self;
+}
+
+sub method_method
+{
+   my $self = shift;
+   my ( $ctx, $i, $s ) = @_;
+   return "$i/$s";
 }
 
 sub init_prop_scalar { 123 }

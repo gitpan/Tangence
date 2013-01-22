@@ -1,14 +1,14 @@
 #  You may distribute under the terms of either the GNU General Public License
 #  or the Artistic License (the same terms as Perl itself)
 #
-#  (C) Paul Evans, 2010-2012 -- leonerd@leonerd.org.uk
+#  (C) Paul Evans, 2010-2013 -- leonerd@leonerd.org.uk
 
 package Tangence::Object;
 
 use strict;
 use warnings;
 
-our $VERSION = '0.15';
+our $VERSION = '0.16';
 
 use Carp;
 
@@ -467,7 +467,37 @@ sub handle_request_GETPROP
    my $result = $self->$m();
 
    return Tangence::Message->new( $ctx->stream, MSG_RESULT )
-      ->pack_any( $result );
+      ->pack_typed( $pdef->overall_type, $result );
+}
+
+sub handle_request_GETPROPELEM
+{
+   my $self = shift;
+   my ( $ctx, $message ) = @_;
+
+   my $prop = $message->unpack_str();
+
+   my $pdef = $self->can_property( $prop ) or die "Object does not have property $prop";
+   my $dim = $pdef->dimension;
+
+   my $m = "get_prop_$prop";
+   $self->can( $m ) or die "Object cannot get property $prop\n";
+
+   my $result;
+   if( $dim == DIM_QUEUE or $dim == DIM_ARRAY ) {
+      my $idx = $message->unpack_int();
+      $result = $self->$m()->[$idx];
+   }
+   elsif( $dim == DIM_HASH ) {
+      my $key = $message->unpack_str();
+      $result = $self->$m()->{$key};
+   }
+   else {
+      die "Property $prop cannot fetch elements";
+   }
+
+   return Tangence::Message->new( $ctx->stream, MSG_RESULT )
+      ->pack_typed( $pdef->type, $result );
 }
 
 sub handle_request_SETPROP

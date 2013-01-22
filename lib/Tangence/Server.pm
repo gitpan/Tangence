@@ -1,7 +1,7 @@
 #  You may distribute under the terms of either the GNU General Public License
 #  or the Artistic License (the same terms as Perl itself)
 #
-#  (C) Paul Evans, 2011-2012 -- leonerd@leonerd.org.uk
+#  (C) Paul Evans, 2011-2013 -- leonerd@leonerd.org.uk
 
 package Tangence::Server;
 
@@ -10,7 +10,7 @@ use warnings;
 
 use base qw( Tangence::Stream );
 
-our $VERSION = '0.15';
+our $VERSION = '0.16';
 
 use Carp;
 
@@ -240,6 +240,24 @@ sub handle_request_GETPROP
    $ctx->respond( $response );
 }
 
+sub handle_request_GETPROPELEM
+{
+   my $self = shift;
+   my ( $token, $message ) = @_;
+
+   my $objid = $message->unpack_int();
+
+   my $ctx = Tangence::Server::Context->new( $self, $token );
+
+   my $object = $self->registry->get_by_id( $objid ) or
+      return $ctx->responderr( "No such object with id $objid" );
+
+   my $response = eval { $object->handle_request_GETPROPELEM( $ctx, $message ) };
+   $@ and return $ctx->responderr( $@ );
+
+   $ctx->respond( $response );
+}
+
 sub handle_request_SETPROP
 {
    my $self = shift;
@@ -258,14 +276,23 @@ sub handle_request_SETPROP
    $ctx->respond( $response );
 }
 
-sub handle_request_WATCH
+*handle_request_WATCH      = \&_handle_request_WATCHany;
+*handle_request_WATCH_ITER = \&_handle_request_WATCHany;
+sub _handle_request_WATCHany
 {
    my $self = shift;
    my ( $token, $message ) = @_;
    
    my $objid = $message->unpack_int();
    my $prop  = $message->unpack_str();
-   my $want_initial = $message->unpack_bool();
+   my $want_initial;
+   my $iter_from;
+   if( $message->type == MSG_WATCH ) {
+      $want_initial = $message->unpack_bool();
+   }
+   elsif( $message->type == MSG_WATCH_ITER ) {
+      $iter_from = $message->unpack_int();
+   }
 
    my $ctx = Tangence::Server::Context->new( $self, $token );
 
@@ -277,10 +304,27 @@ sub handle_request_WATCH
 
    $self->_install_watch( $object, $prop );
 
-   $ctx->respond( Tangence::Message->new( $self, MSG_WATCHING ) );
-   undef $ctx;
+   if( $message->type == MSG_WATCH ) {
+      $ctx->respond( Tangence::Message->new( $self, MSG_WATCHING ) );
+      $self->_send_initial( $object, $prop ) if $want_initial;
+   }
+   elsif( $message->type == MSG_WATCH_ITER ) {
+      my $m = "iter_prop_$prop";
+      my $iter = $object->$m( $iter_from );
+      my $id = $self->message_state->{next_iterid}++;
+      $self->peer_hasiter->{$id} = $iter;
+      $ctx->respond( Tangence::Message->new( $self, MSG_WATCHING_ITER )
+         ->pack_int( $id )
+         ->pack_int( 0 ) # first index
+         ->pack_int( $#{ $object->${\"get_prop_$prop"} } ) # last index
+      );
+   }
+}
 
-   return unless $want_initial;
+sub _send_initial
+{
+   my $self = shift;
+   my ( $object, $prop ) = @_;
 
    my $m = "get_prop_$prop";
    return unless( $object->can( $m ) );
@@ -320,6 +364,35 @@ sub handle_request_UNWATCH
       return $ctx->responderr( "Not watching $prop" );
 
    $object->unwatch_property( $prop, $id );
+
+   $ctx->respond( Tangence::Message->new( $self, MSG_OK ) );
+}
+
+sub handle_request_ITER_NEXT
+{
+   my $self = shift;
+   my ( $token, $message ) = @_;
+
+   my $iterid = $message->unpack_int();
+
+   my $ctx = Tangence::Server::Context->new( $self, $token );
+
+   my $iter = $self->peer_hasiter->{$iterid} or
+      return $ctx->responderr( "No such iterator with id $iterid" );
+
+   $iter->handle_request_ITER_NEXT( $ctx, $message );
+}
+
+sub handle_request_ITER_DESTROY
+{
+   my $self = shift;
+   my ( $token, $message ) = @_;
+
+   my $iterid = $message->unpack_int();
+
+   my $ctx = Tangence::Server::Context->new( $self, $token );
+
+   delete $self->peer_hasiter->{$iterid};
 
    $ctx->respond( Tangence::Message->new( $self, MSG_OK ) );
 }

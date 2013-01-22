@@ -1,10 +1,11 @@
-#!/usr/bin/perl -w
+#!/usr/bin/perl
 
 use strict;
+use warnings;
 
-use Test::More tests => 21;
+use Test::More;
 use Test::Fatal qw( dies_ok );
-use Test::Memory::Cycle;
+use Test::Refcount;
 
 use Tangence::Constants;
 use Tangence::Registry;
@@ -12,153 +13,247 @@ use Tangence::Registry;
 use Tangence::Server;
 use Tangence::Client;
 
-use t::Ball;
+use t::TestObj;
 use t::TestServerClient;
 
 my $registry = Tangence::Registry->new(
-   tanfile => "t/Ball.tan",
+   tanfile => "t/TestObj.tan",
 );
-my $ball = $registry->construct(
-   "t::Ball",
-   colour => "red",
-   size   => 100,
+my $obj = $registry->construct(
+   "t::TestObj",
+   scalar   => 123,
+   s_scalar => 456,
 );
 
 my ( $server, $client ) = make_serverclient( $registry );
 
-my $ballproxy = $client->rootobj;
+my $objproxy = $client->rootobj;
 
-my $result;
+# Methods
+{
+   my $result;
+   $objproxy->call_method(
+      method => "method",
+      args   => [ 10, "hello" ],
+      on_result => sub { $result = shift },
+   );
 
-$ballproxy->call_method(
-   method => "bounce",
-   args   => [ "20 metres" ],
-   on_result => sub { $result = shift },
-);
+   is( $result, "10/hello", 'result of call_method()' );
 
-is( $result, "bouncing", 'result of call_method()' );
+   dies_ok( sub { $objproxy->call_method(
+                    method => "no_such_method",
+                    args   => [ 123 ],
+                    on_result => sub {},
+                  ); },
+            'Calling no_such_method fails in proxy' );
+}
 
-dies_ok( sub { $ballproxy->call_method(
-                 method => "no_such_method",
-                 args   => [ 123 ],
-                 on_result => sub {},
-               ); },
-         'Calling no_such_method fails in proxy' );
+# Events
+{
+   my $event_i;
+   my $event_s;
+   my $subbed;
+   $objproxy->subscribe_event(
+      event => "event",
+      on_fire => sub {
+         ( $event_i, $event_s ) = @_;
+      },
+      on_subscribed => sub { $subbed = 1 },
+   );
 
-my $howhigh;
-my $subbed;
-$ballproxy->subscribe_event(
-   event => "bounced",
-   on_fire => sub {
-      ( $howhigh ) = @_;
-   },
-   on_subscribed => sub { $subbed = 1 },
-);
+   is( $subbed, 1, '$subbed after subscribe_event' );
 
-$ball->method_bounce( {}, "10 metres" );
+   $obj->fire_event( event => 20, "bye" );
 
-is( $howhigh, "10 metres", '$howhigh is 10 metres after subscribed event' );
+   is( $event_i, 20, '$event_i after subscribed event' );
 
-dies_ok( sub { $ballproxy->subscribe_event(
-                 event => "no_such_event",
-                 on_fire => sub {},
-               ); },
-         'Subscribing to no_such_event fails in proxy' );
+   $objproxy->unsubscribe_event(
+      event => "event",
+   );
 
-is( $ballproxy->prop( "size" ), 100, 'Smashed property initially set in proxy' );
+   dies_ok( sub { $objproxy->subscribe_event(
+                    event => "no_such_event",
+                    on_fire => sub {},
+                  ); },
+            'Subscribing to no_such_event fails in proxy' );
+}
 
-my $colour;
+# Properties get/set
+{
+   is( $objproxy->prop( "s_scalar" ), 456, 'Smashed property initially set in proxy' );
 
-$ballproxy->get_property(
-   property => "colour",
-   on_value => sub { $colour = shift },
-);
+   my $value;
+   $objproxy->get_property(
+      property => "scalar",
+      on_value => sub { $value = shift },
+   );
 
-is( $colour, "red", '$colour is red' );
+   is( $value, 123, '$value after get_property' );
 
-my $didset = 0;
-$ballproxy->set_property(
-   property => "colour",
-   value    => "blue",
-   on_done  => sub { $didset = 1 },
-);
+   $objproxy->get_property_element(
+      property => "hash",
+      key      => "two",
+      on_value => sub { $value = shift },
+   );
 
-is( $ball->get_prop_colour, "blue", '$ball->colour is now blue' );
+   is( $value, 2, '$value after get_property_element hash key' );
 
-my $watched;
-undef $colour;
-$ballproxy->watch_property(
-   property => "colour",
-   on_set => sub { $colour = shift },
-   on_watched => sub { $watched = 1 },
-);
+   $objproxy->get_property_element(
+      property => "array",
+      index    => 1,
+      on_value => sub { $value = shift },
+   );
 
-$ball->set_prop_colour( "green" );
+   is( $value, 2, '$value after get_property_element array index' );
 
-is( $colour, "green", '$colour is green after MSG_UPDATE' );
+   my $didset = 0;
+   $objproxy->set_property(
+      property => "scalar",
+      value    => 135,
+      on_done  => sub { $didset = 1 },
+   );
 
-my $colourchanged = 0;
-my $secondcolour;
-$ballproxy->watch_property(
-   property => "colour",
-   on_set => sub {
-      $secondcolour = shift;
-      $colourchanged = 1
-   },
-   want_initial => 1,
-);
+   is( $obj->get_prop_scalar, 135, '$obj->get_prop_scalar after set_property' );
+   is( $didset, 1, '$didset after set_property' );
+}
 
-is( $secondcolour, "green", '$secondcolour is green after second watch' );
+# Properties watch
+{
+   my $value;
+   my $watched;
+   $objproxy->watch_property(
+      property => "scalar",
+      on_set => sub { $value = shift },
+      on_watched => sub { $watched = 1 },
+   );
 
-$ball->set_prop_colour( "orange" );
+   $obj->set_prop_scalar( 147 );
 
-is( $colour, "orange", '$colour is orange after second MSG_UPDATE' );
-is( $colourchanged, 1, '$colourchanged is true after second MSG_UPDATE' );
+   is( $value, 147, '$value after watch_property/set_prop_scalar' );
 
-dies_ok( sub { $ballproxy->get_property(
-                 property => "no_such_property",
-                 on_value => sub {},
-               ); },
-         'Getting no_such_property fails in proxy' );
+   my $valuechanged = 0;
+   my $secondvalue;
+   $objproxy->watch_property(
+      property => "scalar",
+      on_set => sub {
+         $secondvalue = shift;
+         $valuechanged = 1
+      },
+      want_initial => 1,
+   );
 
-# Test the smashed properties
+   is( $secondvalue, 147, '$secondvalue after watch_property with want_initial' );
 
-my $size;
-$watched = 0;
-$ballproxy->watch_property(
-   property => "size",
-   on_set => sub { $size = shift },
-   on_watched => sub { $watched = 1 },
-   want_initial => 1,
-);
+   $obj->set_prop_scalar( 159 );
 
-is( $watched, 1, 'watch_property on smashed prop is synchronous' );
+   is( $value, 159, '$value after second set_prop_scalar' );
+   is( $valuechanged, 1, '$valuechanged is true after second set_prop_scalar' );
 
-is( $size, 100, 'watch_property on smashed prop gives initial value' );
+   $objproxy->unwatch_property(
+      property => "scalar",
+   );
 
-undef $size;
-$ball->set_prop_size( 200 );
+   dies_ok( sub { $objproxy->get_property(
+                    property => "no_such_property",
+                    on_value => sub {},
+                  ); },
+            'Getting no_such_property fails in proxy' );
+}
 
-is( $size, 200, 'smashed prop watch succeeds' );
+# Property iterators
+{
+   my @value;
+   my $iter;
+   my ( $first_idx, $last_idx );
+   my $watched;
+   $objproxy->watch_property(
+      property => "queue",
+      on_set => sub { @value = @_ },
+      on_push => sub { push @value, @_ },
+      on_shift => sub { shift @value for 1 .. shift },
+      iter_from => "first",
+      on_iter => sub { ( $iter, $first_idx, $last_idx ) = @_ },
+      on_watched => sub { $watched = 1 },
+   );
+
+   ok( defined $iter, '$iter defined after MSG_WATCHING_ITER' );
+
+   is( $first_idx, 0, '$first_idx after MSG_WATCHING_ITER' );
+   is( $last_idx,  2, '$last_idx after MSG_WATCHING_ITER' );
+
+   my $idx;
+   my @more;
+   $iter->next_forward(
+      on_more => sub { ( $idx, @more ) = @_ }
+   );
+
+   is( $idx, 0, 'next_forward starts at element 0' );
+   is_deeply( \@more, [ 1 ], 'next_forward yielded 1 element' );
+
+   undef @more;
+   $iter->next_forward(
+      count => 5,
+      on_more => sub { ( $idx, @more ) = @_ }
+   );
+
+   is( $idx, 1, 'next_forward starts at element 1' );
+   is_deeply( \@more, [ 2, 3 ], 'next_forward yielded 2 elements' );
+
+   undef @more;
+   $iter->next_backward(
+      on_more => sub { ( $idx, @more ) = @_ }
+   );
+
+   is( $idx, 2, 'next_backward starts at element 2' );
+   is_deeply( \@more, [ 3 ], 'next_forward yielded 1 element' );
+
+   undef $iter;
+}
+
+# Smashed Properties
+{
+   my $value;
+   my $watched;
+   $objproxy->watch_property(
+      property => "s_scalar",
+      on_set => sub { $value = shift },
+      on_watched => sub { $watched = 1 },
+      want_initial => 1,
+   );
+
+   is( $watched, 1, 'watch_property on smashed prop is synchronous' );
+
+   is( $value, 456, 'watch_property on smashed prop gives initial value' );
+
+   undef $value;
+   $obj->set_prop_s_scalar( 468 );
+
+   is( $value, 468, 'smashed prop update succeeds' );
+}
 
 # Test object destruction
+{
+   my $proxy_destroyed = 0;
+   $objproxy->subscribe_event(
+      event => "destroy",
+      on_fire => sub { $proxy_destroyed = 1 },
+   );
 
-my $proxy_destroyed = 0;
+   my $obj_destroyed = 0;
 
-$ballproxy->subscribe_event(
-   event => "destroy",
-   on_fire => sub { $proxy_destroyed = 1 },
-);
+   $obj->destroy( on_destroyed => sub { $obj_destroyed = 1 } );
 
-my $obj_destroyed = 0;
+   is( $proxy_destroyed, 1, 'proxy gets destroyed' );
 
-$ball->destroy( on_destroyed => sub { $obj_destroyed = 1 } );
+   is( $obj_destroyed, 1, 'object gets destroyed' );
+}
 
-is( $proxy_destroyed, 1, 'proxy gets destroyed' );
+is_oneref( $client, '$client has refcount 1 before shutdown' );
+is_oneref( $server, '$server has refcount 1 before shutdown' );
+undef $client; undef $server;
 
-is( $obj_destroyed, 1, 'object gets destroyed' );
+is_oneref( $obj, '$obj has refcount 1 before shutdown' );
+is_oneref( $objproxy, '$objproxy has refcount 1 before shutdown' );
+is_oneref( $registry, '$registry has refcount 1 before shutdown' );
 
-memory_cycle_ok( $ball, '$ball has no memory cycles' );
-memory_cycle_ok( $registry, '$registry has no memory cycles' );
-memory_cycle_ok( $ballproxy, '$ballproxy has no memory cycles' );
-memory_cycle_ok( $client, '$client has no memory cycles' );
+done_testing;
