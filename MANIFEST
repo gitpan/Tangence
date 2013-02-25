@@ -42,13 +42,10 @@ t/20server.t
 t/21client.t
 t/22xlink.t
 t/23close.t
-t/24objects.t
 t/30props-cbs.t
 t/31props-cache.t
 t/32props-iter.t
 t/99pod.t
-t/Bag.pm
-t/Bag.tan
 t/Ball.pm
 t/Ball.tan
 t/Colourable.pm

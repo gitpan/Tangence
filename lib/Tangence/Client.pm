@@ -1,7 +1,7 @@
 #  You may distribute under the terms of either the GNU General Public License
 #  or the Artistic License (the same terms as Perl itself)
 #
-#  (C) Paul Evans, 2010-2012 -- leonerd@leonerd.org.uk
+#  (C) Paul Evans, 2010-2013 -- leonerd@leonerd.org.uk
 
 package Tangence::Client;
 
@@ -10,14 +10,16 @@ use warnings;
 
 use base qw( Tangence::Stream );
 
-our $VERSION = '0.16';
+our $VERSION = '0.17';
 
 use Carp;
 
 use Tangence::Constants;
 use Tangence::ObjectProxy;
 
-use constant VERSION_MINOR_MIN => 1;
+use List::Util qw( max );
+
+use constant VERSION_MINOR_MIN => 2;
 
 =head1 NAME
 
@@ -148,6 +150,12 @@ be passed a L<Tangence::ObjectProxy> to the registry.
 
  $on_registry->( $registry )
 
+=item version_minor_min => INT
+
+Optional minimum minor version to negotiate with the server. This can be used
+to require a higher minimum version than the client module itself supports, in
+case the application requires features in a newer version than that.
+
 =back
 
 =cut
@@ -157,11 +165,13 @@ sub tangence_connected
    my $self = shift;
    my %args = @_;
 
+   my $version_minor_min = max( VERSION_MINOR_MIN, $args{version_minor_min} || 0 );
+
    $self->request(
       request => Tangence::Message->new( $self, MSG_INIT )
          ->pack_int( VERSION_MAJOR )
          ->pack_int( VERSION_MINOR )
-         ->pack_int( VERSION_MINOR_MIN ),
+         ->pack_int( $version_minor_min ),
 
       on_response => sub {
          my ( $message ) = @_;
@@ -290,16 +300,16 @@ sub get_by_id
 sub make_proxy
 {
    my $self = shift;
-   my ( $id, $class, $smashdata ) = @_;
+   my ( $id, $classname, $smashdata ) = @_;
 
    if( exists $self->objectproxies->{$id} ) {
       croak "Already have an object id $id";
    }
 
-   my $introspection;
-   if( defined $class ) {
-      $introspection = $self->peer_hasclass->{$class}->[0];
-      defined $introspection or croak "Cannot construct a proxy for class $class as no introspection exists";
+   my $class;
+   if( defined $classname ) {
+      $class = $self->peer_hasclass->{$classname}->[0];
+      defined $class or croak "Cannot construct a proxy for class $classname as no meta exists";
    }
 
    my $obj = $self->objectproxies->{$id} =
@@ -307,8 +317,7 @@ sub make_proxy
          conn => $self,
          id   => $id,
 
-         class  => $class,
-         introspection => $introspection,
+         class => $class,
 
          on_error => $self->on_error,
       );

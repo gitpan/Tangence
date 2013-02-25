@@ -9,7 +9,7 @@ use strict;
 use warnings;
 use 5.010; # //
 
-our $VERSION = '0.16';
+our $VERSION = '0.17';
 
 use Carp;
 
@@ -299,12 +299,6 @@ sub minor_version
 }
 
 # Some (internal) methods that control new protocol features
-
-# wire protocol understands DATA_RECORD and DATAMETA_STRUCT
-sub _ver_has_records { shift->minor_version >= 2 }
-
-# wire protocol encodes Class as record
-sub _ver_class_as_record { shift->minor_version >= 2 }
 
 # wire protocol supports MSG_GETPROPELEM
 sub _ver_can_getpropelem { shift->minor_version >= 3 }
