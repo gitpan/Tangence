@@ -8,6 +8,7 @@ my $build = Module::Build->new(
    requires => {
       'Encode' => 0,
       'Exporter' => '5.57',
+      'List::Util' => '1.29', # pair*
       'perl' => 5.010, # pack/unpack > specifiers
       'Parser::MGC' => '0.04',
       'URI::Split' => 0,
@@ -17,7 +18,7 @@ my $build = Module::Build->new(
       'Test::HexString' => 0,
       'Test::Identity' => 0,
       'Test::Memory::Cycle' => 0,
-      'Test::More' => 0,
+      'Test::More' => '0.88', # done_testing
       'Test::Refcount' => 0,
    },
    auto_configure_requires => 0, # Don't add M::B to configure_requires

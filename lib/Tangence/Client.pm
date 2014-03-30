@@ -1,7 +1,7 @@
 #  You may distribute under the terms of either the GNU General Public License
 #  or the Artistic License (the same terms as Perl itself)
 #
-#  (C) Paul Evans, 2010-2013 -- leonerd@leonerd.org.uk
+#  (C) Paul Evans, 2010-2014 -- leonerd@leonerd.org.uk
 
 package Tangence::Client;
 
@@ -10,11 +10,12 @@ use warnings;
 
 use base qw( Tangence::Stream );
 
-our $VERSION = '0.18';
+our $VERSION = '0.19';
 
 use Carp;
 
 use Tangence::Constants;
+use Tangence::Types;
 use Tangence::ObjectProxy;
 
 use List::Util qw( max );
@@ -175,21 +176,21 @@ sub tangence_connected
 
       on_response => sub {
          my ( $message ) = @_;
-         my $type = $message->type;
+         my $code = $message->code;
 
-         if( $type == MSG_INITED ) {
+         if( $code == MSG_INITED ) {
             my $major = $message->unpack_int();
             my $minor = $message->unpack_int();
 
             $self->minor_version( $minor );
             $self->tangence_initialised( %args );
          }
-         elsif( $type == MSG_ERROR ) {
+         elsif( $code == MSG_ERROR ) {
             my $msg = $message->unpack_str();
             print STDERR "Cannot initialise stream - error $msg";
          }
          else {
-            print STDERR "Cannot initialise stream - code $type\n";
+            print STDERR "Cannot initialise stream - code $code\n";
          }
       },
    );
@@ -200,24 +201,26 @@ sub tangence_initialised
    my $self = shift;
    my %args = @_;
 
+   my $request = Tangence::Message->new( $self, MSG_GETROOT );
+   TYPE_ANY->pack_value( $request, $self->identity );
+
    $self->request(
-      request => Tangence::Message->new( $self, MSG_GETROOT )
-         ->pack_any( $self->identity ),
+      request => $request,
 
       on_response => sub {
          my ( $message ) = @_;
-         my $type = $message->type;
+         my $code = $message->code;
 
-         if( $type == MSG_RESULT ) {
-            $self->rootobj( $message->unpack_obj() );
+         if( $code == MSG_RESULT ) {
+            $self->rootobj( TYPE_OBJ->unpack_value( $message ) );
             $args{on_root}->( $self->rootobj ) if $args{on_root};
          }
-         elsif( $type == MSG_ERROR ) {
+         elsif( $code == MSG_ERROR ) {
             my $msg = $message->unpack_str();
             print STDERR "Cannot get root object - error $msg";
          }
          else {
-            print STDERR "Cannot get root object - code $type\n";
+            print STDERR "Cannot get root object - code $code\n";
          }
       }
    );
@@ -227,18 +230,18 @@ sub tangence_initialised
 
       on_response => sub {
          my ( $message ) = @_;
-         my $type = $message->type;
+         my $code = $message->code;
 
-         if( $type == MSG_RESULT ) {
-            $self->registry( $message->unpack_obj() );
+         if( $code == MSG_RESULT ) {
+            $self->registry( TYPE_OBJ->unpack_value( $message ) );
             $args{on_registry}->( $self->registry ) if $args{on_registry};
          }
-         elsif( $type == MSG_ERROR ) {
+         elsif( $code == MSG_ERROR ) {
             my $msg = $message->unpack_str();
             print STDERR "Cannot get registry - error $msg";
          }
          else {
-            print STDERR "Cannot get registry - code $type\n";
+            print STDERR "Cannot get registry - code $code\n";
          }
       }
    );

@@ -1,7 +1,7 @@
 #  You may distribute under the terms of either the GNU General Public License
 #  or the Artistic License (the same terms as Perl itself)
 #
-#  (C) Paul Evans, 2010-2012 -- leonerd@leonerd.org.uk
+#  (C) Paul Evans, 2010-2014 -- leonerd@leonerd.org.uk
 
 package Tangence::Message;
 
@@ -13,7 +13,7 @@ use warnings;
 # restriction could be listed.
 use 5.010; 
 
-our $VERSION = '0.18';
+our $VERSION = '0.19';
 
 use Carp;
 
@@ -22,45 +22,31 @@ use Tangence::Constants;
 use Tangence::Class;
 use Tangence::Meta::Method;
 use Tangence::Meta::Event;
-use Tangence::Meta::Property;
+use Tangence::Property;
 use Tangence::Meta::Argument;
-use Tangence::Meta::Type;
 use Tangence::Struct;
+use Tangence::Types;
 
 use Tangence::Object;
 
-use Encode qw( encode_utf8 decode_utf8 );
-use Scalar::Util qw( weaken );
+use List::Util qw( pairmap );
+use Scalar::Util qw( weaken blessed );
 
 # Normally we don't care about hash key order. But, when writing test scripts
 # that will assert on the serialisation bytes, we do. Setting this to some
 # true value will sort keys first
 our $SORT_HASH_KEYS = 0;
 
-use constant TYPE_ANY      => Tangence::Meta::Type->new( "any" );
-use constant TYPE_INT      => Tangence::Meta::Type->new( "int" );
-use constant TYPE_STR      => Tangence::Meta::Type->new( "str" );
-use constant TYPE_LIST_ANY => Tangence::Meta::Type->new( list => TYPE_ANY );
-use constant TYPE_LIST_STR => Tangence::Meta::Type->new( list => TYPE_STR );
-use constant TYPE_DICT_ANY => Tangence::Meta::Type->new( dict => TYPE_ANY );
-
-# It would be really useful to put this in List::Utils or somesuch
-sub pairmap(&@)
-{
-   my $code = shift;
-   return map { $code->( local $a = shift, local $b = shift ) } 0 .. @_/2-1;
-}
-
 sub new
 {
    my $class = shift;
-   my ( $stream, $type, $record ) = @_;
+   my ( $stream, $code, $record ) = @_;
 
    $record = "" unless defined $record;
 
    return bless {
       stream => $stream,
-      type   => $type,
+      code   => $code,
       record => $record,
    }, $class;
 }
@@ -72,20 +58,26 @@ sub try_new_from_bytes
 
    return undef unless length $_[0] >= 5;
 
-   my ( $type, $len ) = unpack( "CN", $_[0] );
+   my ( $code, $len ) = unpack( "CN", $_[0] );
    return 0 unless length $_[0] >= 5 + $len;
 
    substr( $_[0], 0, 5, "" );
 
    my $record = substr( $_[0], 0, $len, "" );
 
-   return $class->new( $stream, $type, $record );
+   return $class->new( $stream, $code, $record );
 }
 
-sub type
+sub stream
 {
    my $self = shift;
-   return $self->{type};
+   return $self->{stream};
+}
+
+sub code
+{
+   my $self = shift;
+   return $self->{code};
 }
 
 sub bytes
@@ -93,7 +85,7 @@ sub bytes
    my $self = shift;
 
    my $record = $self->{record};
-   return pack( "CNa*", $self->{type}, length($record), $record );
+   return pack( "CNa*", $self->{code}, length($record), $record );
 }
 
 sub _pack_leader
@@ -145,247 +137,86 @@ sub _peek_leader_type
 sub _unpack_leader
 {
    my $self = shift;
+   my ( $peek ) = @_;
 
    my $type = $self->_peek_leader_type;
    my ( $typenum ) = unpack( "C", $self->{record} );
-   substr( $self->{record}, 0, 1, "" );
 
    my $num  = $typenum & 0x1f;
 
+   my $len = 1;
    if( $num == 0x1f ) {
-      ( $num ) = unpack( "C", $self->{record} );
+      ( $num ) = unpack( "x C", $self->{record} );
 
       if( $num < 0x80 ) {
-         substr( $self->{record}, 0, 1, "" );
+         $len = 2;
       }
       else {
-         ( $num ) = unpack( "N", $self->{record} );
+         ( $num ) = unpack( "x N", $self->{record} );
          $num &= 0x7fffffff;
-         substr( $self->{record}, 0, 4, "" );
+         $len = 5;
       }
    }
 
+   substr( $self->{record}, 0, $len ) = "" if !$peek;
+
    return $type, $num;
+}
+
+sub _pack
+{
+   my $self = shift;
+   $self->{record} .= $_[0];
+}
+
+sub _unpack
+{
+   my $self = shift;
+   my ( $num ) = @_;
+   length $self->{record} >= $num or croak "Can't pull $num bytes as there aren't enough";
+   return substr( $self->{record}, 0, $num, "" );
 }
 
 sub pack_bool
 {
    my $self = shift;
    my ( $d ) = @_;
-   $self->_pack_leader( DATA_NUMBER, $d ? DATANUM_BOOLTRUE : DATANUM_BOOLFALSE );
+   TYPE_BOOL->pack_value( $self, $d );
    return $self;
 }
 
 sub unpack_bool
 {
    my $self = shift;
-   my ( $type, $num ) = $self->_unpack_leader();
-
-   $type == DATA_NUMBER or croak "Expected to unpack a number(bool) but did not find one";
-   $num == DATANUM_BOOLFALSE and return 0;
-   $num == DATANUM_BOOLTRUE  and return 1;
-   croak "Expected to find a DATANUM_BOOL subtype but got $num";
-}
-
-my %pack_int_format = (
-   DATANUM_UINT8,  [ "C",  1 ],
-   DATANUM_SINT8,  [ "c",  1 ],
-   DATANUM_UINT16, [ "S>", 2 ],
-   DATANUM_SINT16, [ "s>", 2 ],
-   DATANUM_UINT32, [ "L>", 4 ],
-   DATANUM_SINT32, [ "l>", 4 ],
-   DATANUM_UINT64, [ "Q>", 8 ],
-   DATANUM_SINT64, [ "q>", 8 ],
-);
-
-my %int_sigs = (
-   u8  => DATANUM_UINT8,
-   s8  => DATANUM_SINT8,
-   u16 => DATANUM_UINT16,
-   s16 => DATANUM_SINT16,
-   u32 => DATANUM_UINT32,
-   s32 => DATANUM_SINT32,
-   u64 => DATANUM_UINT64,
-   s64 => DATANUM_SINT64,
-);
-
-sub _best_int_type_for
-{
-   my ( $n ) = @_;
-
-   # TODO: Consider 64bit values
-
-   if( $n < 0 ) {
-      return DATANUM_SINT8  if $n >= -0x80;
-      return DATANUM_SINT16 if $n >= -0x8000;
-      return DATANUM_SINT32;
-   }
-
-   return DATANUM_UINT8  if $n <= 0xff;
-   return DATANUM_UINT16 if $n <= 0xffff;
-   return DATANUM_UINT32;
+   return TYPE_BOOL->unpack_value( $self );
 }
 
 sub pack_int
 {
    my $self = shift;
    my ( $d ) = @_;
-
-   defined $d or croak "cannot pack_int(undef)";
-   ref $d and croak "$d is not a number";
-   my $subtype = _best_int_type_for( $d );
-   $self->_pack_leader( DATA_NUMBER, $subtype );
-   $self->{record} .= pack( $pack_int_format{$subtype}[0], $d );
+   TYPE_INT->pack_value( $self, $d );
    return $self;
 }
 
 sub unpack_int
 {
    my $self = shift;
-   my ( $type, $num ) = $self->_unpack_leader();
-
-   $type == DATA_NUMBER or croak "Expected to unpack a number but did not find one";
-   exists $pack_int_format{$num} or croak "Expected an integer subtype but got $num";
-   my ( $n ) = unpack( $pack_int_format{$num}[0], $self->{record} );
-   substr( $self->{record}, 0, $pack_int_format{$num}[1] ) = "";
-   return $n;
+   return TYPE_INT->unpack_value( $self );
 }
 
 sub pack_str
 {
    my $self = shift;
    my ( $d ) = @_;
-
-   defined $d or croak "cannot pack_str(undef)";
-   ref $d and croak "$d is not a string";
-   my $octets = encode_utf8( $d );
-   $self->_pack_leader( DATA_STRING, length($octets) );
-   $self->{record} .= $octets;
+   TYPE_STR->pack_value( $self, $d );
    return $self;
 }
 
 sub unpack_str
 {
    my $self = shift;
-   my ( $type, $num ) = $self->_unpack_leader();
-
-   $type == DATA_STRING or croak "Expected to unpack a string but did not find one";
-   length $self->{record} >= $num or croak "Can't pull $num bytes for string as there aren't enough";
-   my $octets = substr( $self->{record}, 0, $num, "" );
-   return decode_utf8( $octets );
-}
-
-sub pack_obj
-{
-   my $self = shift;
-   my ( $d ) = @_;
-
-   my $stream = $self->{stream};
-
-   if( !defined $d ) {
-      $self->_pack_leader( DATA_OBJECT, 0 );
-   }
-   elsif( eval { $d->isa( "Tangence::Object" ) } ) {
-      my $id = $d->id;
-      my $preamble = "";
-
-      $d->{destroyed} and croak "Cannot pack destroyed object $d";
-
-      $self->packmeta_construct( $d ) unless $stream->peer_hasobj->{$id};
-
-      $self->_pack_leader( DATA_OBJECT, 4 );
-      $self->{record} .= pack( "N", $id );
-   }
-   elsif( eval { $d->isa( "Tangence::ObjectProxy" ) } ) {
-      $self->_pack_leader( DATA_OBJECT, 4 );
-      $self->{record} .= pack( "N", $d->id );
-   }
-   else {
-      croak "Do not know how to pack a " . ref($d);
-   }
-   return $self;
-}
-
-sub unpack_obj
-{
-   my $self = shift;
-   my ( $type, $num ) = $self->_unpack_leader();
-
-   my $stream = $self->{stream};
-
-   $type == DATA_OBJECT or croak "Expected to unpack an object but did not find one";
-   return undef unless $num;
-   if( $num == 4 ) {
-      my ( $id ) = unpack( "N", $self->{record} ); substr( $self->{record}, 0, 4, "" );
-      return $stream->get_by_id( $id );
-   }
-   else {
-      croak "Unexpected number of bits to encode an OBJECT";
-   }
-}
-
-sub pack_list
-{
-   my $self = shift;
-   my ( $list, $listtype ) = @_;
-
-   ref $list eq "ARRAY" or croak "Cannot pack a list from non-ARRAY reference";
-   my $member_type = $listtype->member_type;
-
-   $self->_pack_leader( DATA_LIST, scalar @$list );
-   $self->pack_typed( $member_type, $_ ) for @$list;
-
-   return $self;
-}
-
-sub unpack_list
-{
-   my $self = shift;
-   my ( $listtype ) = @_;
-
-   my ( $type, $num ) = $self->_unpack_leader();
-   $type == DATA_LIST or croak "Expected to unpack a list but did not find one";
-
-   my $member_type = $listtype->member_type;
-   my @a;
-   foreach ( 1 .. $num ) {
-      push @a, $self->unpack_typed( $member_type );
-   }
-   return \@a;
-}
-
-sub pack_dict
-{
-   my $self = shift;
-   my ( $dict, $dicttype ) = @_;
-
-   ref $dict eq "HASH" or croak "Cannot pack a dict from non-HASH reference";
-   my $member_type = $dicttype->member_type;
-
-   my @keys = keys %$dict;
-   @keys = sort @keys if $SORT_HASH_KEYS;
-
-   $self->_pack_leader( DATA_DICT, scalar @keys );
-   $self->pack_str( $_ ) and $self->pack_typed( $member_type, $dict->{$_} ) for @keys;
-
-   return $self;
-}
-
-sub unpack_dict
-{
-   my $self = shift;
-   my ( $dicttype ) = @_;
-
-   my ( $type, $num ) = $self->_unpack_leader();
-   $type == DATA_DICT or croak "Expected to unpack a dict but did not find one";
-
-   my $member_type = $dicttype->member_type;
-   my %h;
-   foreach ( 1 .. $num ) {
-      my $key = $self->unpack_str();
-      $h{$key} = $self->unpack_typed( $member_type );
-   }
-   return \%h;
+   return TYPE_STR->unpack_value( $self );
 }
 
 sub pack_record
@@ -405,7 +236,7 @@ sub pack_record
    $self->pack_int( $stream->peer_hasstruct->{$struct->perlname}->[1] );
    foreach my $field ( @fields ) {
       my $fieldname = $field->name;
-      $self->pack_typed( $field->type, $rec->$fieldname );
+      $field->type->pack_value( $self, $rec->$fieldname );
    }
 
    return $self;
@@ -435,7 +266,7 @@ sub unpack_record
 
    my %values;
    foreach my $field ( $struct->fields ) {
-      $values{$field->name} = $self->unpack_typed( $field->type );
+      $values{$field->name} = $field->type->unpack_value( $self );
    }
 
    return $struct->perlname->new( %values );
@@ -459,18 +290,26 @@ sub packmeta_construct
    $self->pack_int( $id );
    $self->pack_int( $stream->peer_hasclass->{$class->perlname}->[2] );
 
-   my $smasharr = [];
-
    if( @$smashkeys ) {
       my $smashdata = $obj->smash( $smashkeys );
-      $smasharr = [ map { $smashdata->{$_} } @$smashkeys ];
 
       for my $prop ( @$smashkeys ) {
          $stream->_install_watch( $obj, $prop );
       }
-   }
 
-   $self->pack_typed( TYPE_LIST_ANY, $smasharr );
+      if( $stream->_ver_can_typed_smash ) {
+         $self->_pack_leader( DATA_LIST, scalar @$smashkeys );
+         foreach my $prop ( @$smashkeys ) {
+            $class->property( $prop )->overall_type->pack_value( $self, $smashdata->{$prop} );
+         }
+      }
+      else {
+         TYPE_LIST_ANY->pack_value( $self, [ map { $smashdata->{$_} } @$smashkeys ] );
+      }
+   }
+   else {
+      $self->_pack_leader( DATA_LIST, 0 );
+   }
 
    weaken( my $weakstream = $stream );
    $stream->peer_hasobj->{$id} = $obj->subscribe_event( 
@@ -486,15 +325,28 @@ sub unpackmeta_construct
 
    my $id = $self->unpack_int();
    my $classid = $self->unpack_int();
-   my $class = $stream->message_state->{id2class}{$classid};
-   my $smasharr = $self->unpack_typed( TYPE_LIST_ANY );
+   my $class_perlname = $stream->message_state->{id2class}{$classid};
 
-   my $smashkeys = $stream->peer_hasclass->{$class}->[1];
+   my ( $class, $smashkeys ) = @{ $stream->peer_hasclass->{$class_perlname} };
+
+   my $smasharr;
+   if( $stream->_ver_can_typed_smash ) {
+      my ( $type, $num ) = $self->_unpack_leader;
+      $type == DATA_LIST or croak "Expected to unpack a LIST of smashed data";
+      $num == @$smashkeys or croak "Expected to unpack a LIST of " . ( scalar @$smashkeys ) . " elements";
+
+      foreach my $prop ( @$smashkeys ) {
+         push @$smasharr, $class->property( $prop )->overall_type->unpack_value( $self );
+      }
+   }
+   else {
+      $smasharr = TYPE_LIST_ANY->unpack_value( $self );
+   }
 
    my $smashdata;
    $smashdata->{$smashkeys->[$_]} = $smasharr->[$_] for 0 .. $#$smasharr;
 
-   $stream->make_proxy( $id, $class, $smashdata );
+   $stream->make_proxy( $id, $class_perlname, $smashdata );
 }
 
 sub packmeta_class
@@ -543,9 +395,9 @@ sub packmeta_class
       },
       superclasses => [ map { $_->name } @superclasses ],
    );
-   $self->pack_any( $classrec );
+   $self->pack_record( $classrec );
 
-   $self->pack_typed( TYPE_LIST_STR, $smashkeys );
+   TYPE_LIST_STR->pack_value( $self, $smashkeys );
 
    $stream->peer_hasclass->{$class->perlname} = [ $class, $smashkeys, $classid ];
 }
@@ -558,7 +410,7 @@ sub unpackmeta_class
 
    my $name = $self->unpack_str();
    my $classid = $self->unpack_int();
-   my $classrec = $self->unpack_any();
+   my $classrec = $self->unpack_record();
 
    my $class = Tangence::Meta::Class->new( name => $name );
    $class->define(
@@ -567,11 +419,11 @@ sub unpackmeta_class
             $a => Tangence::Meta::Method->new(
                class     => $class,
                name      => $a,
-               ret       => $b->returns ? Tangence::Meta::Type->new_from_sig( $b->returns )
+               ret       => $b->returns ? Tangence::Type->new_from_sig( $b->returns )
                                         : undef,
                arguments => [ map {
                   Tangence::Meta::Argument->new(
-                     type => Tangence::Meta::Type->new_from_sig( $_ ),
+                     type => Tangence::Type->new_from_sig( $_ ),
                   )
                } @{ $b->arguments } ],
             )
@@ -585,7 +437,7 @@ sub unpackmeta_class
                name      => $a,
                arguments => [ map {
                   Tangence::Meta::Argument->new(
-                     type => Tangence::Meta::Type->new_from_sig( $_ ),
+                     type => Tangence::Type->new_from_sig( $_ ),
                   )
                } @{ $b->arguments } ],
             )
@@ -594,11 +446,13 @@ sub unpackmeta_class
 
       properties => {
          pairmap {
-            $a => Tangence::Meta::Property->new(
+            # Need to use non-Meta:: Property so it can generate overall type
+            # using Tangence::Type instead of Tangence::Meta::Type
+            $a => Tangence::Property->new(
                class     => $class,
                name      => $a,
                dimension => $b->dimension,
-               type      => Tangence::Meta::Type->new_from_sig( $b->type ),
+               type      => Tangence::Type->new_from_sig( $b->type ),
                smashed   => $b->smashed,
             )
          } %{ $classrec->properties }
@@ -616,7 +470,7 @@ sub unpackmeta_class
 
    my $perlname = $class->perlname;
 
-   my $smashkeys = $self->unpack_typed( TYPE_LIST_STR );
+   my $smashkeys = TYPE_LIST_STR->unpack_value( $self );
 
    $stream->peer_hasclass->{$perlname} = [ $class, $smashkeys, $classid, $class ];
    if( defined $classid ) {
@@ -638,8 +492,8 @@ sub packmeta_struct
    my $structid = ++$stream->message_state->{next_structid};
    $self->pack_str( $struct->name );
    $self->pack_int( $structid );
-   $self->pack_typed( TYPE_LIST_STR, [ map { $_->name } @fields ] );
-   $self->pack_typed( TYPE_LIST_STR, [ map { $_->type->sig } @fields ] );
+   TYPE_LIST_STR->pack_value( $self, [ map { $_->name } @fields ] );
+   TYPE_LIST_STR->pack_value( $self, [ map { $_->type->sig } @fields ] );
 
    $stream->peer_hasstruct->{$struct->perlname} = [ $struct, $structid ];
 }
@@ -652,8 +506,8 @@ sub unpackmeta_struct
 
    my $name     = $self->unpack_str();
    my $structid = $self->unpack_int();
-   my $names    = $self->unpack_typed( TYPE_LIST_STR );
-   my $types    = $self->unpack_typed( TYPE_LIST_STR );
+   my $names    = TYPE_LIST_STR->unpack_value( $self );
+   my $types    = TYPE_LIST_STR->unpack_value( $self );
 
    my $struct = Tangence::Struct->new( name => $name );
    if( !$struct->defined ) {
@@ -668,160 +522,12 @@ sub unpackmeta_struct
    $stream->message_state->{id2struct}{$structid} = $struct;
 }
 
-# Used by pack_typed
-sub pack_prim
-{
-   my $self = shift;
-   my ( $d, $type ) = @_;
-
-   my $sig = $type->sig;
-
-   if( my $code = $self->can( "pack_$sig" ) ) {
-      $code->( $self, $d );
-   }
-   elsif( exists $int_sigs{$sig} ) {
-      ref $d and croak "$d is not a number";
-      my $subtype = $int_sigs{$sig};
-      $self->_pack_leader( DATA_NUMBER, $subtype );
-      $self->{record} .= pack( $pack_int_format{$subtype}[0], $d );
-   }
-   else {
-      croak "Unrecognised type signature $sig";
-   }
-
-   return $self;
-}
-
-# Used by unpack_typed
-sub unpack_prim
-{
-   my $self = shift;
-   my ( $type ) = @_;
-
-   my $sig = $type->sig;
-
-   if( my $code = $self->can( "unpack_$sig" ) ) {
-      return $code->( $self );
-   }
-   elsif( exists $int_sigs{$sig} ) {
-      my ( $type, $num ) = $self->_unpack_leader();
-
-      $type == DATA_NUMBER or croak "Expected to unpack a number but did not find one";
-      $num == $int_sigs{$sig} or croak "Expected subtype $int_sigs{$sig} but got $num";
-      my ( $n ) = unpack( $pack_int_format{$num}[0], $self->{record} );
-      substr( $self->{record}, 0, $pack_int_format{$num}[1] ) = "";
-      return $n;
-   }
-   else {
-      croak "Unrecognised type signature $sig";
-   }
-}
-
-sub pack_any
-{
-   my $self = shift;
-   my ( $d ) = @_;
-
-   my $stream = $self->{stream};
-
-   if( !defined $d ) {
-      $self->pack_obj( undef );
-   }
-   elsif( !ref $d ) {
-      # TODO: We'd never choose to pack a number
-      $self->pack_str( $d );
-   }
-   elsif( eval { $d->isa( "Tangence::Object" ) or $d->isa( "Tangence::ObjectProxy" ) } ) {
-      $self->pack_obj( $d );
-   }
-   elsif( my $struct = eval { Tangence::Struct->for_perlname( ref $d ) } ) {
-      $self->pack_record( $d, $struct );
-   }
-   elsif( ref $d eq "ARRAY" ) {
-      $self->pack_list( $d, TYPE_LIST_ANY );
-   }
-   elsif( ref $d eq "HASH" ) {
-      $self->pack_dict( $d, TYPE_DICT_ANY );
-   }
-   else {
-      croak "Do not know how to pack a " . ref($d);
-   }
-
-   return $self;
-}
-
-sub unpack_any
-{
-   my $self = shift;
-
-   my $stream = $self->{stream};
-
-   my $type = $self->_peek_leader_type();
-
-   if( $type == DATA_NUMBER ) {
-      return $self->unpack_int();
-   }
-   if( $type == DATA_STRING ) {
-      return $self->unpack_str();
-   }
-   elsif( $type == DATA_OBJECT ) {
-      return $self->unpack_obj();
-   }
-   elsif( $type == DATA_LIST ) {
-      return $self->unpack_list( TYPE_LIST_ANY );
-   }
-   elsif( $type == DATA_DICT ) {
-      return $self->unpack_dict( TYPE_DICT_ANY );
-   }
-   elsif( $type == DATA_RECORD ) {
-      return $self->unpack_record( undef );
-   }
-   else {
-      croak "Do not know how to unpack record of type $type";
-   }
-}
-
-sub pack_typed
-{
-   my $self = shift;
-   my ( $type, $d ) = @_;
-
-   my $code = $self->can( "pack_" . $type->aggregate ) or die "Unrecognised type aggregation " . $type->aggregate;
-   return $code->( $self, $d, $type );
-}
-
-sub unpack_typed
-{
-   my $self = shift;
-   my $type = shift;
-
-   my $code = $self->can( "unpack_" . $type->aggregate ) or die "Unrecognised type aggregation " . $type->aggregate;
-   return $code->( $self, $type );
-}
-
-sub pack_all_typed
-{
-   my $self = shift;
-   my ( $types, @args ) = @_;
-
-   $self->pack_typed( $_, shift @args ) for @$types;
-   return $self;
-}
-
-sub unpack_all_typed
-{
-   my $self = shift;
-   my ( $types ) = @_;
-
-   return map { $self->unpack_typed( $_ ) } @$types;
-}
-
 sub pack_all_sametype
 {
    my $self = shift;
    my $type = shift;
 
-   $self->pack_typed( $type, $_ ) for @_;
+   $type->pack_value( $self, $_ ) for @_;
 
    return $self;
 }
@@ -831,7 +537,7 @@ sub unpack_all_sametype
    my $self = shift;
    my ( $type ) = @_;
    my @data;
-   push @data, $self->unpack_typed( $type ) while length $self->{record};
+   push @data, $type->unpack_value( $self ) while length $self->{record};
 
    return @data;
 }

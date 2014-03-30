@@ -1,7 +1,7 @@
 #  You may distribute under the terms of either the GNU General Public License
 #  or the Artistic License (the same terms as Perl itself)
 #
-#  (C) Paul Evans, 2011-2013 -- leonerd@leonerd.org.uk
+#  (C) Paul Evans, 2011-2014 -- leonerd@leonerd.org.uk
 
 package Tangence::Server;
 
@@ -10,13 +10,14 @@ use warnings;
 
 use base qw( Tangence::Stream );
 
-our $VERSION = '0.18';
+our $VERSION = '0.19';
 
 use Carp;
 
 use Scalar::Util qw( weaken );
 
 use Tangence::Constants;
+use Tangence::Types;
 use Tangence::Server::Context;
 
 # We will accept any version back to 2
@@ -287,10 +288,10 @@ sub _handle_request_WATCHany
    my $prop  = $message->unpack_str();
    my $want_initial;
    my $iter_from;
-   if( $message->type == MSG_WATCH ) {
+   if( $message->code == MSG_WATCH ) {
       $want_initial = $message->unpack_bool();
    }
-   elsif( $message->type == MSG_WATCH_ITER ) {
+   elsif( $message->code == MSG_WATCH_ITER ) {
       $iter_from = $message->unpack_int();
    }
 
@@ -304,11 +305,11 @@ sub _handle_request_WATCHany
 
    $self->_install_watch( $object, $prop );
 
-   if( $message->type == MSG_WATCH ) {
+   if( $message->code == MSG_WATCH ) {
       $ctx->respond( Tangence::Message->new( $self, MSG_WATCHING ) );
       $self->_send_initial( $object, $prop ) if $want_initial;
    }
-   elsif( $message->type == MSG_WATCH_ITER ) {
+   elsif( $message->code == MSG_WATCH_ITER ) {
       my $m = "iter_prop_$prop";
       my $iter = $object->$m( $iter_from );
       my $id = $self->message_state->{next_iterid}++;
@@ -436,8 +437,8 @@ sub handle_request_GETROOT
 {
    my $self = shift;
    my ( $token, $message ) = @_;
-   
-   my $identity = $message->unpack_any();
+
+   my $identity = TYPE_ANY->unpack_value( $message );
 
    my $ctx = Tangence::Server::Context->new( $self, $token );
 
@@ -445,9 +446,10 @@ sub handle_request_GETROOT
 
    $self->identity( $identity );
 
-   $ctx->respond( Tangence::Message->new( $self, MSG_RESULT )
-      ->pack_obj( $root )
-   );
+   my $response = Tangence::Message->new( $self, MSG_RESULT );
+   TYPE_OBJ->pack_value( $response, $root );
+
+   $ctx->respond( $response );
 }
 
 sub handle_request_GETREGISTRY
@@ -457,9 +459,10 @@ sub handle_request_GETREGISTRY
 
    my $ctx = Tangence::Server::Context->new( $self, $token );
 
-   $ctx->respond( Tangence::Message->new( $self, MSG_RESULT )
-      ->pack_obj( $self->registry )
-   );
+   my $response = Tangence::Message->new( $self, MSG_RESULT );
+   TYPE_OBJ->pack_value( $response, $self->registry );
+
+   $ctx->respond( $response );
 }
 
 my %change_values = (

@@ -8,15 +8,13 @@ package Tangence::ObjectProxy;
 use strict;
 use warnings;
 
-our $VERSION = '0.18';
+our $VERSION = '0.19';
 
 use Carp;
 
 use Tangence::Constants;
 
-use Tangence::Meta::Type;
-
-use constant TYPE_U8 => Tangence::Meta::Type->new( "u8" );
+use Tangence::Types;
 
 use Scalar::Util qw( weaken );
 
@@ -245,27 +243,32 @@ sub call_method
       or croak "Class ".$self->classname." does not have a method $method";
 
    my $conn = $self->{conn};
-   $conn->request(
-      request => Tangence::Message->new( $conn, MSG_CALL )
+
+   my $request = Tangence::Message->new( $conn, MSG_CALL )
          ->pack_int( $self->id )
-         ->pack_str( $method )
-         ->pack_all_typed( [ $mdef->argtypes ], $args ? @$args : () ),
+         ->pack_str( $method );
+
+   my @argtypes = $mdef->argtypes;
+   $argtypes[$_]->pack_value( $request, $args ? $args->[$_] : undef ) for 0..$#argtypes;
+
+   $conn->request(
+      request => $request,
 
       on_response => sub {
          my ( $message ) = @_;
-         my $type = $message->type;
+         my $code = $message->code;
 
-         if( $type == MSG_RESULT ) {
-            my $result = $mdef->ret ? $message->unpack_typed( $mdef->ret )
+         if( $code == MSG_RESULT ) {
+            my $result = $mdef->ret ? $mdef->ret->unpack_value( $message )
                                     : undef;
             $on_result->( $result );
          }
-         elsif( $type == MSG_ERROR ) {
+         elsif( $code == MSG_ERROR ) {
             my $msg = $message->unpack_str();
             $on_error->( $msg );
          }
          else {
-            $on_error->( "Unexpected response code $type" );
+            $on_error->( "Unexpected response code $code" );
          }
       },
    );
@@ -346,17 +349,17 @@ sub subscribe_event
 
       on_response => sub {
          my ( $message ) = @_;
-         my $type = $message->type;
+         my $code = $message->code;
 
-         if( $type == MSG_SUBSCRIBED ) {
+         if( $code == MSG_SUBSCRIBED ) {
             $on_subscribed->() if $on_subscribed;
          }
-         elsif( $type == MSG_ERROR ) {
+         elsif( $code == MSG_ERROR ) {
             my $msg = $message->unpack_str();
             $on_error->( $msg );
          }
          else {
-            $on_error->( "Unexpected response code $type" );
+            $on_error->( "Unexpected response code $code" );
          }
       },
    );
@@ -370,7 +373,7 @@ sub handle_request_EVENT
    my $event = $message->unpack_str();
    my $edef = $self->can_event( $event ) or return;
 
-   my @args = $message->unpack_all_typed( [ $edef->argtypes ] );
+   my @args = map { $_->unpack_value( $message ) } $edef->argtypes;
 
    if( my $cbs = $self->{subscriptions}->{$event} ) {
       foreach my $cb ( @$cbs ) { $cb->( @args ) }
@@ -459,7 +462,7 @@ sub get_property
    my $on_error = delete $args{on_error} || $self->{on_error};
    ref $on_error eq "CODE" or croak "Expected 'on_error' as a CODE ref";
 
-   $self->can_property( $property )
+   my $pdef = $self->can_property( $property )
       or croak "Class ".$self->classname." does not have a property $property";
 
    my $conn = $self->{conn};
@@ -470,18 +473,18 @@ sub get_property
 
       on_response => sub {
          my ( $message ) = @_;
-         my $type = $message->type;
+         my $code = $message->code;
 
-         if( $type == MSG_RESULT ) {
-            my $value = $message->unpack_any();
+         if( $code == MSG_RESULT ) {
+            my $value = $pdef->overall_type->unpack_value( $message );
             $on_value->( $value );
          }
-         elsif( $type == MSG_ERROR ) {
+         elsif( $code == MSG_ERROR ) {
             my $msg = $message->unpack_str();
             $on_error->( $msg );
          }
          else {
-            $on_error->( "Unexpected response code $type" );
+            $on_error->( "Unexpected response code $code" );
          }
       },
    );
@@ -565,18 +568,18 @@ sub get_property_element
 
       on_response => sub {
          my ( $message ) = @_;
-         my $type = $message->type;
+         my $code = $message->code;
 
-         if( $type == MSG_RESULT ) {
-            my $value = $message->unpack_any();
+         if( $code == MSG_RESULT ) {
+            my $value = $pdef->type->unpack_value( $message );
             $on_value->( $value );
          }
-         elsif( $type == MSG_ERROR ) {
+         elsif( $code == MSG_ERROR ) {
             my $msg = $message->unpack_str();
             $on_error->( $msg );
          }
          else {
-            $on_error->( "Unexpected response code $type" );
+            $on_error->( "Unexpected response code $code" );
          }
       },
    );
@@ -657,25 +660,27 @@ sub set_property
       or croak "Class ".$self->classname." does not have a property $property";
 
    my $conn = $self->{conn};
-   $conn->request(
-      request => Tangence::Message->new( $conn, MSG_SETPROP )
+   my $request = Tangence::Message->new( $conn, MSG_SETPROP )
          ->pack_int( $self->id )
-         ->pack_str( $property )
-         ->pack_typed( $pdef->type, $value ),
+         ->pack_str( $property );
+   $pdef->type->pack_value( $request, $value ),
+
+   $conn->request(
+      request => $request,
 
       on_response => sub {
          my ( $message ) = @_;
-         my $type = $message->type;
+         my $code = $message->code;
 
-         if( $type == MSG_OK ) {
+         if( $code == MSG_OK ) {
             $on_done->() if $on_done;
          }
-         elsif( $type == MSG_ERROR ) {
+         elsif( $code == MSG_ERROR ) {
             my $msg = $message->unpack_str();
             $on_error->( $msg );
          }
          else {
-            $on_error->( "Unexpected response code $type" );
+            $on_error->( "Unexpected response code $code" );
          }
       },
    );
@@ -871,12 +876,12 @@ sub watch_property
 
       on_response => sub {
          my ( $message ) = @_;
-         my $type = $message->type;
+         my $code = $message->code;
 
-         if( $type == MSG_WATCHING ) {
+         if( $code == MSG_WATCHING ) {
             $on_watched->() if $on_watched;
          }
-         elsif( $type == MSG_WATCHING_ITER ) {
+         elsif( $code == MSG_WATCHING_ITER ) {
             $on_watched->() if $on_watched;
             my $iter_id = $message->unpack_int();
             my $first_idx = $message->unpack_int();
@@ -885,12 +890,12 @@ sub watch_property
             my $iter = Tangence::ObjectProxy::_PropertyIterator->new( $self, $iter_id, $pdef->type );
             $on_iter->( $iter, $first_idx, $last_idx );
          }
-         elsif( $type == MSG_ERROR ) {
+         elsif( $code == MSG_ERROR ) {
             my $msg = $message->unpack_str();
             $on_error->( $msg );
          }
          else {
-            $on_error->( "Unexpected response code $type" );
+            $on_error->( "Unexpected response code $code" );
          }
       },
    );
@@ -902,7 +907,7 @@ sub handle_request_UPDATE
    my ( $message ) = @_;
 
    my $prop  = $message->unpack_str();
-   my $how   = $message->unpack_typed( TYPE_U8 );
+   my $how   = TYPE_U8->unpack_value( $message );
 
    my $pdef = $self->can_property( $prop ) or return;
    my $type = $pdef->type;
@@ -927,7 +932,7 @@ sub _update_property_scalar
    my ( $p, $type, $how, $message ) = @_;
 
    if( $how == CHANGE_SET ) {
-      my $value = $message->unpack_typed( $type );
+      my $value = $type->unpack_value( $message );
       $p->{cache} = $value;
       $_->{on_set} and $_->{on_set}->( $p->{cache} ) for @{ $p->{cbs} };
    }
@@ -942,13 +947,13 @@ sub _update_property_hash
    my ( $p, $type, $how, $message ) = @_;
 
    if( $how == CHANGE_SET ) {
-      my $value = $message->unpack_typed( Tangence::Meta::Type->new( dict => $type ) );
+      my $value = Tangence::Type->new( dict => $type )->unpack_value( $message );
       $p->{cache} = $value;
       $_->{on_set} and $_->{on_set}->( $p->{cache} ) for @{ $p->{cbs} };
    }
    elsif( $how == CHANGE_ADD ) {
       my $key   = $message->unpack_str();
-      my $value = $message->unpack_typed( $type );
+      my $value = $type->unpack_value( $message );
       $p->{cache}->{$key} = $value;
       $_->{on_add} and $_->{on_add}->( $key, $value ) for @{ $p->{cbs} };
    }
@@ -968,7 +973,7 @@ sub _update_property_queue
    my ( $p, $type, $how, $message ) = @_;
 
    if( $how == CHANGE_SET ) {
-      my $value = $message->unpack_typed( Tangence::Meta::Type->new( list => $type ) );
+      my $value = Tangence::Type->new( list => $type )->unpack_value( $message );
       $p->{cache} = $value;
       $_->{on_set} and $_->{on_set}->( $p->{cache} ) for @{ $p->{cbs} };
    }
@@ -993,7 +998,7 @@ sub _update_property_array
    my ( $p, $type, $how, $message ) = @_;
 
    if( $how == CHANGE_SET ) {
-      my $value = $message->unpack_typed( Tangence::Meta::Type->new( list => $type ) );
+      my $value = Tangence::Type->new( list => $type )->unpack_value( $message );
       $p->{cache} = $value;
       $_->{on_set} and $_->{on_set}->( $p->{cache} ) for @{ $p->{cbs} };
    }
@@ -1041,13 +1046,13 @@ sub _update_property_objset
 
    if( $how == CHANGE_SET ) {
       # Comes across in a LIST. We need to map id => obj
-      my $objects = $message->unpack_typed( Tangence::Meta::Type->new( list => $type ) );
+      my $objects = Tangence::Type->new( list => $type )->unpack_value( $message );
       $p->{cache} = { map { $_->id => $_ } @$objects };
       $_->{on_set} and $_->{on_set}->( $p->{cache} ) for @{ $p->{cbs} };
    }
    elsif( $how == CHANGE_ADD ) {
       # Comes as object only
-      my $obj = $message->unpack_typed( $type );
+      my $obj = $type->unpack_value( $message );
       $p->{cache}->{$obj->id} = $obj;
       $_->{on_add} and $_->{on_add}->( $obj ) for @{ $p->{cbs} };
    }
@@ -1202,20 +1207,20 @@ sub _next
 
       on_response => sub {
          my ( $message ) = @_;
-         my $type = $message->type;
+         my $code = $message->code;
 
-         if( $type == MSG_ITER_RESULT ) {
+         if( $code == MSG_ITER_RESULT ) {
             $on_more->(
                $message->unpack_int(),
                $message->unpack_all_sametype( $element_type ),
             );
          }
-         elsif( $type == MSG_ERROR ) {
+         elsif( $code == MSG_ERROR ) {
             my $msg = $message->unpack_str();
             $on_error->( $msg );
          }
          else {
-            $on_error->( "Unexpected response code $type" );
+            $on_error->( "Unexpected response code $code" );
          }
       }
    );

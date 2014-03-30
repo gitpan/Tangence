@@ -3,92 +3,99 @@ abstract: 'attribute-oriented server/client object remoting framework'
 author:
   - 'Paul Evans <leonerd@leonerd.org.uk>'
 build_requires:
-  Test::Fatal: 0.006
-  Test::HexString: 0
-  Test::Identity: 0
-  Test::Memory::Cycle: 0
-  Test::More: 0
-  Test::Refcount: 0
+  Test::Fatal: '0.006'
+  Test::HexString: '0'
+  Test::Identity: '0'
+  Test::Memory::Cycle: '0'
+  Test::More: '0.88'
+  Test::Refcount: '0'
 dynamic_config: 1
-generated_by: 'Module::Build version 0.4001, CPAN::Meta::Converter version 2.120921'
+generated_by: 'Module::Build version 0.4204, CPAN::Meta::Converter version 2.133380'
 license: perl
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.4.html
-  version: 1.4
+  version: '1.4'
 name: Tangence
 provides:
   Tangence:
     file: lib/Tangence.pm
-    version: 0.18
+    version: '0.19'
   Tangence::Class:
     file: lib/Tangence/Class.pm
-    version: 0.18
+    version: '0.19'
   Tangence::Client:
     file: lib/Tangence/Client.pm
-    version: 0.18
+    version: '0.19'
   Tangence::Compiler::Parser:
     file: lib/Tangence/Compiler/Parser.pm
-    version: 0.18
+    version: '0.19'
   Tangence::Constants:
     file: lib/Tangence/Constants.pm
-    version: 0.18
+    version: '0.19'
   Tangence::Message:
     file: lib/Tangence/Message.pm
-    version: 0.18
+    version: '0.19'
   Tangence::Meta::Argument:
     file: lib/Tangence/Meta/Argument.pm
-    version: 0.18
+    version: '0.19'
   Tangence::Meta::Class:
     file: lib/Tangence/Meta/Class.pm
-    version: 0.18
+    version: '0.19'
   Tangence::Meta::Event:
     file: lib/Tangence/Meta/Event.pm
-    version: 0.18
+    version: '0.19'
   Tangence::Meta::Field:
     file: lib/Tangence/Meta/Field.pm
-    version: 0.18
+    version: '0.19'
   Tangence::Meta::Method:
     file: lib/Tangence/Meta/Method.pm
-    version: 0.18
+    version: '0.19'
   Tangence::Meta::Property:
     file: lib/Tangence/Meta/Property.pm
-    version: 0.18
+    version: '0.19'
   Tangence::Meta::Struct:
     file: lib/Tangence/Meta/Struct.pm
-    version: 0.18
+    version: '0.19'
   Tangence::Meta::Type:
     file: lib/Tangence/Meta/Type.pm
-    version: 0.18
+    version: '0.19'
   Tangence::Object:
     file: lib/Tangence/Object.pm
-    version: 0.18
+    version: '0.19'
   Tangence::ObjectProxy:
     file: lib/Tangence/ObjectProxy.pm
-    version: 0.18
+    version: '0.19'
   Tangence::Property:
     file: lib/Tangence/Property.pm
-    version: 0.18
+    version: '0.19'
   Tangence::Registry:
     file: lib/Tangence/Registry.pm
-    version: 0.18
+    version: '0.19'
   Tangence::Server:
     file: lib/Tangence/Server.pm
-    version: 0.18
+    version: '0.19'
   Tangence::Server::Context:
     file: lib/Tangence/Server/Context.pm
-    version: 0.18
+    version: '0.19'
   Tangence::Stream:
     file: lib/Tangence/Stream.pm
-    version: 0.18
+    version: '0.19'
   Tangence::Struct:
     file: lib/Tangence/Struct.pm
-    version: 0
+  Tangence::Type:
+    file: lib/Tangence/Type.pm
+  Tangence::Type::Primitive:
+    file: lib/Tangence/Type/Primitive.pm
+  Tangence::Types:
+    file: lib/Tangence/Types.pm
+    version: '0.19'
 requires:
-  Encode: 0
-  Exporter: 5.57
-  Parser::MGC: 0.04
-  URI::Split: 0
-  perl: 5.01
+  Encode: '0'
+  Exporter: '5.57'
+  List::Util: '1.29'
+  Parser::MGC: '0.04'
+  URI::Split: '0'
+  perl: '5.01'
 resources:
   license: http://dev.perl.org/licenses/
-version: 0.18
+version: '0.19'

@@ -40,14 +40,14 @@ is_oneref( $server, '$server has refcount 1 initially' );
 
    is_hexstr( $server->recv_message, $S2C{INITED}, 'serverstream initially contains INITED message' );
 
-   is( $server->minor_version, 3, '$server->minor_version after MSG_INIT' );
+   is( $server->minor_version, 4, '$server->minor_version after MSG_INIT' );
 
    $server->send_message( $C2S{GETROOT} );
 
    is_hexstr( $server->recv_message, $S2C{GETROOT}, 'serverstream contains root object' );
 
-   # One here, one in smashed prop watch
-   is_refcount( $obj, 2, '$obj has refcount 2 after MSG_GETROOT' );
+   # One here, one in each of two smashed prop watches
+   is_refcount( $obj, 3, '$obj has refcount 3 after MSG_GETROOT' );
 
    is( $server->identity, "testscript", '$server->identity' );
 

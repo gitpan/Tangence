@@ -1,7 +1,7 @@
 #  You may distribute under the terms of either the GNU General Public License
 #  or the Artistic License (the same terms as Perl itself)
 #
-#  (C) Paul Evans, 2011-2012 -- leonerd@leonerd.org.uk
+#  (C) Paul Evans, 2011-2014 -- leonerd@leonerd.org.uk
 
 package Tangence::Compiler::Parser;
 
@@ -10,8 +10,9 @@ use warnings;
 use base qw( Parser::MGC );
 
 use feature qw( switch ); # we like given/when
+no if $] >= 5.017011, warnings => 'experimental::smartmatch';
 
-our $VERSION = '0.18';
+our $VERSION = '0.19';
 
 use File::Basename qw( dirname );
 
@@ -333,6 +334,8 @@ my @basic_types = qw(
    bool
    int
    s8 s16 s32 s64 u8 u16 u32 u64
+   float
+   float16 float32 float64
    str
    obj
    any

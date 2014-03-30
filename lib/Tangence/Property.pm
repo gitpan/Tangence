@@ -13,7 +13,9 @@ use Carp;
 
 use Tangence::Constants;
 
-our $VERSION = '0.18';
+require Tangence::Type;
+
+our $VERSION = '0.19';
 
 sub build_accessor
 {
@@ -206,6 +208,12 @@ sub _accessor_for_objset
       $_->{on_updated} ? $_->{on_updated}->( $self, $self->{properties}->{$pname}->[0] ) 
                        : $_->{on_del}->( $self, $id ) for @$cbs;
    };
+}
+
+sub make_type
+{
+   shift;
+   return Tangence::Type->new( @_ );
 }
 
 package # hide from CPAN

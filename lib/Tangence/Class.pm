@@ -29,7 +29,7 @@ BEGIN {
    }
 }
 
-our $VERSION = '0.18';
+our $VERSION = '0.19';
 
 our %metas; # cache one per class, keyed by _Tangence_ class name
 
@@ -45,7 +45,7 @@ sub new
 sub _new_type
 {
    my ( $sig ) = @_;
-   return Tangence::Meta::Type->new_from_sig( $sig );
+   return Tangence::Type->new_from_sig( $sig );
 }
 
 sub declare

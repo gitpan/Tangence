@@ -10,8 +10,8 @@ use Test::HexString;
 use Tangence::Message;
 $Tangence::Message::SORT_HASH_KEYS = 1;
 
-use Tangence::Meta::Type;
-sub _make_type { Tangence::Meta::Type->new_from_sig( shift ) }
+use Tangence::Type;
+sub _make_type { Tangence::Type->new_from_sig( shift ) }
 
 my $VERSION_MINOR = Tangence::Constants->VERSION_MINOR;
 
@@ -168,44 +168,6 @@ test_specific_dies "string from undef",
    data   => undef,
    stream => "\x80";
 
-test_specific "object",
-   type   => "obj",
-   data   => $ball,
-             # DATAMETA_CLASS
-   stream => "\xe2" . "\x2ct.Colourable" .
-                      "\x02\1" .
-                      "\xa4" . "\x02\1" .
-                               "\x60" .
-                               "\x60" .
-                               "\x61" . "\x26colour" . "\xa3" . "\x02\4" .
-                                                                "\x02\1" .
-                                                                "\x23str" .
-                                                                "\x00" .
-                               "\x40" .
-                      "\x40" .
-             # DATAMETA_CLASS
-             "\xe2" . "\x26t.Ball" .
-                      "\x02\2" .
-                      "\xa4" . "\x02\1" .
-                               "\x61" . "\x26bounce" . "\xa2" . "\x02\2" .
-                                                                "\x41" . "\x23str" .
-                                                                "\x23str" .
-                               "\x61" . "\x27bounced" . "\xa1" . "\x02\3" .
-                                                                 "\x41" . "\x23str" .
-                               "\x61" . "\x24size" . "\xa3" . "\x02\4" .
-                                                              "\x02\1" .
-                                                              "\x23int" .
-                                                              "\x01" .
-                               "\x41" . "\x2ct.Colourable" .
-                      "\x41" . "\x24size" .
-             # DATAMETA_CONSTRUCT
-             "\xe1" . "\x02\1" .
-                      "\x02\2" .
-                      "\x41" . "\x80" .
-             # DATA_OBJ
-             "\x84" . "\0\0\0\1",
-   retdata => "OBJPROXY[id=1]";
-
 test_specific "record",
    type   => "record",
    data   => TestRecord->new( one => 1, two => 2 ),
@@ -227,11 +189,11 @@ sub test_typed
    my $type = _make_type $args{sig};
 
    my $m = Tangence::Message->new( TestStream->new );
-   is( $m->pack_typed( $type, $args{data} ), $m, "pack_typed returns \$m for $name" );
+   $type->pack_value( $m, $args{data} );
 
-   is_hexstr( $m->{record}, $args{stream}, "pack_typed $name" );
+   is_hexstr( $m->{record}, $args{stream}, "pack typed $name" );
 
-   is_deeply( $m->unpack_typed( $type ), $args{data}, "unpack_typed $name" );
+   is_deeply( $type->unpack_value( $m ), exists $args{retdata} ? $args{retdata} : $args{data}, "\$type->unpack_value $name" );
    is( length $m->{record}, 0, "eats all stream for $name" );
 }
 
@@ -246,14 +208,14 @@ sub test_typed_dies
    dies_ok( sub {
       my $m = Tangence::Message->new( TestStream->new );
 
-      $m->pack_typed( $type, $args{data} );
-   }, "pack_typed($sig) $name dies" ) if exists $args{data};
+      $type->pack_value( $m, $args{data} );
+   }, "\$type->pack_value for ($sig) $name dies" ) if exists $args{data};
 
    dies_ok( sub {
       my $m = Tangence::Message->new( TestStream->new, undef, $args{stream} );
 
-      $m->unpack_typed( $type )
-   }, "unpack_typed($sig) $name dies" ) if exists $args{stream};
+      $type->unpack_value( $m )
+   }, "\$type->unpack_value for ($sig) $name dies" ) if exists $args{stream};
 }
 
 test_typed "bool f",
@@ -319,6 +281,56 @@ test_typed_dies "int from ARRAY",
    data   => [],
    stream => "\x40";
 
+test_typed "float16 zero",
+   sig    => "float16",
+   data   => 0,
+   stream => "\x10\0\0";
+
+test_typed "float16",
+   sig    => "float16",
+   data   => 1.25,
+   stream => "\x10\x3d\x00";
+
+test_typed "float32 zero",
+   sig    => "float32",
+   data   => 0,
+   stream => "\x11\0\0\0\0";
+
+test_typed "float32",
+   sig    => "float32",
+   data   => 1.25,
+   stream => "\x11\x3f\xa0\x00\x00";
+
+test_typed "float64 zero",
+   sig    => "float64",
+   data   => 0,
+   stream => "\x12\0\0\0\0\0\0\0\0";
+
+test_typed "float64",
+   sig    => "float64",
+   data   => 1588.625,
+   stream => "\x12\x40\x98\xd2\x80\x00\x00\x00\x00";
+
+test_typed "float one",
+   sig    => "float",
+   data   => 1,
+   stream => "\x10\x3c\x00";
+
+test_typed "float +100",
+   sig    => "float",
+   data   => 100,
+   stream => "\x10\x56\x40";
+
+test_typed "float +1E8",
+   sig    => "float",
+   data   => 1E8,
+   stream => "\x11\x4c\xbe\xbc\x20";
+
+test_typed "float +1E20",
+   sig    => "float",
+   data   => 1E20,
+   stream => "\x12\x44\x15\xaf\x1d\x78\xb5\x8c\x40";
+
 test_typed "string",
    sig    => "str",
    data   => "hello",
@@ -359,10 +371,58 @@ test_typed_dies "dict(string) from HASH(ARRAY)",
    data   => { splot => [] },
    stream => "\x61\x65splot\x40";
 
+test_typed "object",
+   sig    => "obj",
+   data   => $ball,
+             # DATAMETA_CLASS
+   stream => "\xe2" . "\x2ct.Colourable" .
+                      "\x02\1" .
+                      "\xa4" . "\x02\1" .
+                               "\x60" .
+                               "\x60" .
+                               "\x61" . "\x26colour" . "\xa3" . "\x02\4" .
+                                                                "\x02\1" .
+                                                                "\x23str" .
+                                                                "\x00" .
+                               "\x40" .
+                      "\x40" .
+             # DATAMETA_CLASS
+             "\xe2" . "\x26t.Ball" .
+                      "\x02\2" .
+                      "\xa4" . "\x02\1" .
+                               "\x61" . "\x26bounce" . "\xa2" . "\x02\2" .
+                                                                "\x41" . "\x23str" .
+                                                                "\x23str" .
+                               "\x61" . "\x27bounced" . "\xa1" . "\x02\3" .
+                                                                 "\x41" . "\x23str" .
+                               "\x61" . "\x24size" . "\xa3" . "\x02\4" .
+                                                              "\x02\1" .
+                                                              "\x23int" .
+                                                              "\x01" .
+                               "\x41" . "\x2ct.Colourable" .
+                      "\x41" . "\x24size" .
+             # DATAMETA_CONSTRUCT
+             "\xe1" . "\x02\1" .
+                      "\x02\2" .
+                      "\x41" . "\x02\0" .
+             # DATA_OBJ
+             "\x84" . "\0\0\0\1",
+   retdata => "OBJPROXY[id=1]";
+
 test_typed "any (undef)",
    sig    => "any",
    data   => undef,
    stream => "\x80";
+
+test_typed "any (int)",
+   sig    => "any",
+   data   => 0x1234,
+   stream => "\x04\x12\x34";
+
+test_typed "any (float)",
+   sig    => "any",
+   data   => 123.45,
+   stream => "\x12\x40\x5e\xdc\xcc\xcc\xcc\xcc\xcd";
 
 test_typed "any (string)",
    sig    => "any",
@@ -423,14 +483,6 @@ test_typed "any (record)",
                       "\x214";
 
 my $m;
-
-$m = Tangence::Message->new( 0 );
-$m->pack_all_typed( [ map _make_type($_), 'int', 'str', 'bool' ], 10, "hello", "true" );
-
-is_hexstr( $m->{record}, "\x02\x0a\x25hello\x01", 'pack_all_typed' );
-
-is_deeply( [ $m->unpack_all_typed( [ map _make_type($_), 'int', 'str', 'bool' ] ) ], [ 10, "hello", 1 ], 'unpack_all_typed' );
-is( length $m->{record}, 0, "eats all stream for all_typed" );
 
 $m = Tangence::Message->new( 0 );
 $m->pack_all_sametype( _make_type('int'), 10, 20, 30 );
