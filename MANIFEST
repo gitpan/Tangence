@@ -48,6 +48,7 @@ t/23close.t
 t/30props-cbs.t
 t/31props-cache.t
 t/32props-iter.t
+t/90close-leak.t
 t/99pod.t
 t/Ball.pm
 t/Ball.tan

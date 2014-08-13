@@ -1,7 +1,7 @@
 #  You may distribute under the terms of either the GNU General Public License
 #  or the Artistic License (the same terms as Perl itself)
 #
-#  (C) Paul Evans, 2010-2013 -- leonerd@leonerd.org.uk
+#  (C) Paul Evans, 2010-2014 -- leonerd@leonerd.org.uk
 
 package Tangence::Class;
 
@@ -29,7 +29,7 @@ BEGIN {
    }
 }
 
-our $VERSION = '0.19';
+our $VERSION = '0.20';
 
 our %metas; # cache one per class, keyed by _Tangence_ class name
 
@@ -101,10 +101,16 @@ sub declare
       );
    }
 
+   my @superclasses;
+   foreach ( @{ $args{superclasses} } ) {
+      push @superclasses, Tangence::Class->for_perlname( $_ );
+   }
+
    $self->define(
-      methods    => \%methods,
-      events     => \%events,
-      properties => \%properties,
+      methods      => \%methods,
+      events       => \%events,
+      properties   => \%properties,
+      superclasses => \@superclasses,
    );
 }
 
@@ -133,7 +139,7 @@ sub for_name
    my $class = shift;
    my ( $name ) = @_;
 
-   return $metas{$name} or croak "Unknown Tangence::Class for '$name'";
+   return $metas{$name} || croak "Unknown Tangence::Class for '$name'";
 }
 
 sub for_perlname
@@ -142,7 +148,7 @@ sub for_perlname
    my ( $perlname ) = @_;
 
    ( my $name = $perlname ) =~ s{::}{.}g;
-   return $metas{$name} or croak "Unknown Tangence::Class for '$perlname'";
+   return $metas{$name} || croak "Unknown Tangence::Class for '$perlname'";
 }
 
 sub superclasses
